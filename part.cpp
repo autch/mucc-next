@@ -77,16 +77,17 @@ int mml_ctx::read_length(int* out, int* is_relative)
         getchar(); // consume '%'
         return read_number(out, is_relative);
     } else {
-        if(!isdigit(peek())) {
-            return 0; // no number found
-        }
         int total = 0;
         while(true) {
             int value = 0;
-            while(isdigit(peek())) {
-                value = value * 10 + (getchar() - '0');
+            if(isdigit(peek())) {
+                while(isdigit(peek())) {
+                    value = value * 10 + (getchar() - '0');
+                }
+                value = convert_length_to_clock(value);
+            } else {
+                value = *out;
             }
-            value = convert_length_to_clock(value);
             if(peek() == '.') {
                 // dot length
                 int x = value;
@@ -112,7 +113,7 @@ int mml_ctx::read_length(int* out, int* is_relative)
 
 void mml_ctx::gen_note(mml_part &mp, int code, part_buffer &pb)
 {
-    int len, rel;
+    int len = mp.len + mp.len1, rel;
     if(int ret = read_length(&len, &rel); ret == 0)
         len = mp.len + mp.len1;
 

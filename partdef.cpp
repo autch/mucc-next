@@ -124,6 +124,10 @@ int mml_ctx::parse_partdef(char* part_name, int lineno, mml_part &mp, part_buffe
                 // default note length, length number or direct clock number by '%'
                 int length = 0;
                 read_length(&length, &rel);
+                if(length == 0) {
+                    printf("Warning: parameter of l cannot be zero, line %d\n", lineno);
+                    break;
+                }
                 if(rel)
                     mp.len1 = length;
                 else
@@ -341,7 +345,7 @@ int mml_ctx::parse_partdef(char* part_name, int lineno, mml_part &mp, part_buffe
             }
 
             default:
-                printf("Unknown command: [%c][%s]\n", c, p);
+                printf("Unknown command: [%c] in line %d [%s]\n", c, lineno, p);
                 return -1;
         }
     }
