@@ -47,17 +47,15 @@ int codegen::write_pmd(FILE *out_fp)
     std::vector<uint16_t> drum_pattern_offsets;
     uint16_t title_offset = 0, title2_offset = 0, part_offsets[MAXPART] = {0}, drum_offset = 0;
     int actual_parts = count_actual_parts();
+    int min_parts = std::max(actual_parts, 6);
 
     memset(part_offsets, 0, sizeof part_offsets);
 
     // write part definitions
     write(out_fp, 0);
-    if (actual_parts < 6)
-        write(out_fp, 6);
-    else
-        write(out_fp, actual_parts);
+    write(out_fp, min_parts);
     // write header
-    for(int i = 0; i < actual_parts; i++) {
+    for(int i = 0; i < min_parts; i++) {
         write16(out_fp, 0); // placeholder for part offset
     }
     write16(out_fp, 0); // placeholder for drum pattern offset
@@ -104,9 +102,8 @@ int codegen::write_pmd(FILE *out_fp)
             p++;
         }
     }
-    if (actual_parts < 6)
-        for (int i = actual_parts; i < 6; i++)
-            write16(out_fp, 0);
+    for (int i = actual_parts; i < min_parts; i++)
+        write16(out_fp, 0);
     write16(out_fp, drum_offset);
     write16(out_fp, title_offset); // title offset
     write16(out_fp, title2_offset); // title2 offset
