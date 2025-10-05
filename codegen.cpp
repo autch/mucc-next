@@ -77,9 +77,13 @@ int codegen::write_pmd(FILE *out_fp)
     }
     // write parts
     for(int part = 0; part < MAXPART; part++) {
-        if(part_buffer& pb = parts[part]; pb.pos > 0) {
-            part_offsets[part] = ftell(out_fp);
-            pb.update_part_offset(ftell(out_fp));
+        if(part_buffer& pb = parts[part]; pb.pos > 0 && pb.length_written > 0) {
+            size_t fp = ftell(out_fp);
+            if (fp > 0xffff) {
+                printf("Warning: part %c too large to fit in PMD file\n", 'A' + part);
+            }
+            part_offsets[part] = static_cast<uint16_t>(fp & 0xffff);
+            pb.update_part_offset(part_offsets[part]);
             write_n(out_fp, pb.buffer.data(), pb.size);
         } else {
             part_offsets[part] = 0;

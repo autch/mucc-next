@@ -62,6 +62,7 @@ class mml_ctx
     int macro_sp{0};
 
     char* p{nullptr}; // current position in buffer
+    uint32_t partflags = 0;
 
     void push_macro()
     {
@@ -96,6 +97,7 @@ public:
     void register_macro(int lineno, const std::string& name, const std::string& definition);
 
     int parse_partline(char* part_token, int lineno, char* line, codegen& cg);
+    int parse_wildcardline(int lineno, char* line, codegen& cg);
     int end_mml(codegen& cg);
 
     auto& get_part(int part) { return parts[part]; }

@@ -54,6 +54,8 @@ struct part_buffer
     size_t loop_pos{0}; // position of loop point `L`, offset from buffer. 0 means no loop point
     size_t loop_addr_pos{0}; // position of jump instruction to loop_pos, usually at end of part, offset from buffer. 0 means no loop point
 
+	unsigned length_written{0};
+
     part_buffer() = default;
 
     void write(uint8_t byte)
@@ -104,9 +106,10 @@ struct part_buffer
     void update_part_offset(uint16_t offset)
     {
         if(loop_pos == 0) return; // no loop point
-        uint16_t addr = offset + loop_pos;
-        write_at(loop_addr_pos, addr & 0xFF);
-        write_at(loop_addr_pos + 1, (addr >> 8) & 0xFF);
+    	uint16_t addr_pos = loop_addr_pos & 0xffff;
+        uint16_t addr = (offset + loop_pos) & 0xffff;
+        write_at(addr_pos, addr & 0xFF);
+        write_at(addr_pos + 1, (addr >> 8) & 0xFF);
     }
 
 
@@ -125,7 +128,7 @@ class codegen
 	int count_actual_parts() const {
     	int count = 0;
     	for(const auto& pb : parts) {
-    		if(pb.pos > 0) count++;
+    		if(pb.pos > 0 && pb.length_written > 0) count++;
     	}
     	return count;
     }

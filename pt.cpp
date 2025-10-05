@@ -51,7 +51,7 @@ int is_part_line(char* p)
     if(pp == part_end && *pp != '\0')
         return 0; // no space after part token, but not end of line
 
-    return part_end - p; // return length of part-line token
+    return static_cast<int>(part_end - p); // return length of part-line token
 }
 
 int parse_line(file &f, mml_ctx& mml, codegen& cg)
@@ -65,6 +65,16 @@ int parse_line(file &f, mml_ctx& mml, codegen& cg)
         case '!':
             parse_macro(f, mml);
             break;
+        case '?':
+        {
+            // printf("WILDCARD: [%s]\n", f.p);
+            while (*f.p && *f.p == '?')
+                f.p++;
+            while(*f.p && isspace(*f.p))
+                f.p++;
+            mml.parse_wildcardline(f.line_number, f.p, cg);
+            break;
+        }
         default:
         {
             int len;
@@ -121,23 +131,17 @@ int main(int ac, char** av)
     mml.end_mml(cg);
 
     {
-        FILE* out_fp;
+        FILE* out_fp = nullptr;
         if(out_filename) {
             out_fp = fopen(out_filename, "wb");
             if(!out_fp) {
                 perror("fopen for output");
                 return EXIT_FAILURE;
             }
-        } else {
-            out_fp = stdout;
         }
 
         cg.write_pmd(out_fp);
-
-        if(out_fp != stdout) {
-            fclose(out_fp);
-            out_fp = nullptr;
-        }
+        fclose(out_fp);
     }
 
     cg.report_meta(stdout);
@@ -147,8 +151,7 @@ int main(int ac, char** av)
     for(int part = 0; part < MAXPART; part++) {
         mml_part& mp = mml.get_part(part);
         part_buffer& pb = cg.get_part(part);
-        unsigned ticks = mp.current_tick();
-        if(ticks > 0) {
+        if(unsigned ticks = mp.current_tick(); ticks > 0 || pb.size > 0) {
             printf("PART %c: total %4u, at loop %4u, %5llu bytes\n",
                 'A' + part, ticks, mp.tick_at_loop, pb.size);
         }

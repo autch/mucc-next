@@ -182,9 +182,8 @@ int mml_ctx::call_macro(mml_part &mp, part_buffer &pb)
         set_p(const_cast<char *>(it->second.c_str()));
     } else if(mp.tr_attr & 1) {
         if(auto dit = drummacro.find(std::string(macro_name)); dit != drummacro.end()) {
-            // write(dit->second.first - 0x80) // drum index
-            gen_note(mp, dit->second.index - 0x80, pb);
-            mp.xnote = dit->second.index - 0x80;
+            gen_note(mp, dit->second.index, pb);
+            mp.xnote = dit->second.index;
         } else {
             printf("Drum macro not found: [%s]\n", macro_name);
         }
@@ -203,7 +202,7 @@ void mml_ctx::register_macro(int lineno, const std::string& name, const std::str
             return;
         }
         if(auto [iter, success] = drummacro.insert_or_assign(
-            name.substr(2), drummacro_item{drummacro_count + 0x80, lineno, definition});
+            name.substr(2), drummacro_item{drummacro_count, lineno, definition});
             !success) {
             printf("Warning: drum macro redefined! [%s]\n", name.c_str());
         }
@@ -227,28 +226,49 @@ int mml_ctx::parse_partline(char* part_token, int lineno, char* line, codegen& c
             return -1;
         }
         char part = *pt;
+        partflags |= 1 << (part - 'A');
+
         part_name[0] = part;
         part_name[1] = '\0';
-        // printf("\tParsing for part [%c]\n", part);
+        // printf("\tParsing for part [%c][%s]\n", part, line);
 
         // set part context to p
-        mml_part* mp = parts + (part - 'A');
-        part_buffer* pb = &cg.get_part(part - 'A');
+        mml_part& mp = parts[part - 'A'];
+        part_buffer& pb = cg.get_part(part - 'A');
         set_p(line);
         
-        parse_partdef(part_name, lineno, *mp, *pb);
+        parse_partdef(part_name, lineno, mp, pb);
+        pb.length_written = mp.current_tick();
     }
     return 0;
+}
+
+int mml_ctx::parse_wildcardline(int lineno, char* line, codegen& cg)
+{
+    char part_name[32 + 1];
+    uint32_t pf = partflags;
+    char* pt = part_name;
+
+    for (int part = 0; part < MAXPART; part++) {
+        if (pf & 1) {
+            *pt++ = 'A' + part;
+        }
+        pf >>= 1;
+    }
+    *pt = '\0';
+    return parse_partline(part_name, lineno, line, cg);
 }
 
 int mml_ctx::parse_drumline(codegen& cg)
 {
     char drum_token[MAXMACRONAME];
+    std::vector<part_buffer> drum_buffers;
+    drum_buffers.resize(drummacro_count);
 
     for(auto &[name, item] : drummacro) {
         const std::string& definition = item.definition;
         mml_part dummy_part; // dummy part context for drum pattern
-        part_buffer pb;
+        part_buffer& pb = drum_buffers[item.index];
 
         set_p(const_cast<char *>(definition.c_str()));
 
@@ -257,7 +277,11 @@ int mml_ctx::parse_drumline(codegen& cg)
 
         pb.write(CCD_END);
         pb.size = pb.pos;
+        pb.length_written = dummy_part.current_tick();
 
+    }
+    for (auto& pb : drum_buffers )
+    {
         cg.add_drum_buffer(pb);
     }
     return 0;
