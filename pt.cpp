@@ -54,11 +54,19 @@ int is_part_line(char* p)
     return static_cast<int>(part_end - p); // return length of part-line token
 }
 
+char part_token[MAXPARTNAME];
+
 int parse_line(file &f, mml_ctx& mml, codegen& cg)
 {
     switch(*f.p) {
         case '\0':
             break;
+        case '\t':
+        case ' ':
+            while(*f.p && isspace(*f.p))
+                f.p++;
+            mml.parse_partline(part_token, f.line_number, f.p, cg);
+        break;
         case '#':
             parse_meta(f, cg);
             break;
@@ -79,7 +87,6 @@ int parse_line(file &f, mml_ctx& mml, codegen& cg)
         {
             int len;
             if((len = is_part_line(f.p)) > 0) {
-                char part_token[MAXPARTNAME];
                 snprintf(part_token, sizeof part_token, "%.*s", (int)len, f.p);
                 f.p += len;
                 while(*f.p && isspace(*f.p))
@@ -107,7 +114,9 @@ int main(int ac, char** av)
     codegen cg;
     mml_ctx mml;
     char* out_filename = nullptr;
-    
+
+    part_token[0] = '\0';
+
     if (ac < 2) {
         fprintf(stderr, "Usage: %s <filename> [out_filename]\n", av[0]);
         return EXIT_FAILURE;
