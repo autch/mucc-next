@@ -328,10 +328,11 @@ int mml_ctx::parse_partdef(char* part_name, int lineno, mml_part &mp, part_buffe
             {
                 // report the current tick position for synchronization
                 printf(
-                    "PART %s: LINE %d TICK %u\n"
-                    "        OCT %d+%d LEN %d+%d VOL %d+%d DET %d+%d\n",
-                    part_name, lineno, mp.current_tick(),
-                    mp.oct, mp.oct1, mp.len, mp.len1, mp.vol, mp.vol1, mp.det, mp.det1);
+                    "line %4d: PART %s TICK %5u  TR_ATTR %d OCT %d+%d LEN %d+%d VOL %d+%d DETUNE %d+%d XPOSE %d REP_NEST %d\n",
+                    lineno, part_name, mp.current_tick(),
+                    mp.tr_attr,
+                    mp.oct, mp.oct1, mp.len, mp.len1, mp.vol, mp.vol1, mp.det, mp.det1,
+                    mp.trs, mp.nestlevel);
                 break;
             }
             case 'W':

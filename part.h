@@ -18,7 +18,7 @@ struct mml_part
     uint8_t oct{0};
     uint8_t len{0};
     uint8_t vol{0};
-    uint8_t det{0};
+    int8_t det{0};
     uint8_t leg{0};
     uint8_t xxleg{0};
     uint8_t porsw{0};
