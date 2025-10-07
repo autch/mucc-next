@@ -108,7 +108,8 @@ int codegen::write_pmd(FILE *out_fp)
     write16(out_fp, title_offset); // title offset
     write16(out_fp, title2_offset); // title2 offset
 
-    return 0;
+    fseek(out_fp, 0, SEEK_END);
+    return ftell(out_fp);
 }
 
 void codegen::report_meta(FILE *fp)

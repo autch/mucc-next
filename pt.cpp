@@ -139,6 +139,7 @@ int main(int ac, char** av)
 
     mml.end_mml(cg);
 
+    int bytes_written;
     {
         FILE* out_fp = nullptr;
         if(out_filename) {
@@ -149,7 +150,7 @@ int main(int ac, char** av)
             }
         }
 
-        cg.write_pmd(out_fp);
+        bytes_written = cg.write_pmd(out_fp);
         fclose(out_fp);
     }
 
@@ -165,6 +166,7 @@ int main(int ac, char** av)
                 'A' + part, ticks, mp.tick_at_loop, pb.size);
         }
     }
+    printf("Total %d bytes written.\n", bytes_written);
 
     return EXIT_SUCCESS;
 }
