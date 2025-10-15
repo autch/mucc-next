@@ -1,6 +1,5 @@
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
 #include <cctype>
 
 #include "mucc_def.h"
@@ -37,7 +36,7 @@ int is_part_line(char* p)
     char* pp = p;
     char* part_end = nullptr;
 
-    while(*pp && isupper(*pp))
+    while(*pp && isupper(static_cast<uint8_t>(*pp)))
         pp++;
     
     if(pp == p)
@@ -45,7 +44,7 @@ int is_part_line(char* p)
 
     part_end = pp;
 
-    while(*pp && isspace(*pp))
+    while(*pp && isspace(static_cast<uint8_t>(*pp)))
         pp++;
 
     if(pp == part_end && *pp != '\0')
@@ -63,7 +62,7 @@ int parse_line(file &f, mml_ctx& mml, codegen& cg)
             break;
         case '\t':
         case ' ':
-            while(*f.p && isspace(*f.p))
+            while(*f.p && isspace(static_cast<uint8_t>(*f.p)))
                 f.p++;
             mml.parse_partline(part_token, f.line_number, f.p, cg);
         break;
@@ -78,18 +77,17 @@ int parse_line(file &f, mml_ctx& mml, codegen& cg)
             // printf("WILDCARD: [%s]\n", f.p);
             while (*f.p && *f.p == '?')
                 f.p++;
-            while(*f.p && isspace(*f.p))
+            while(*f.p && isspace(static_cast<uint8_t>(*f.p)))
                 f.p++;
             mml.parse_wildcardline(f.line_number, f.p, cg);
             break;
         }
         default:
         {
-            int len;
-            if((len = is_part_line(f.p)) > 0) {
-                snprintf(part_token, sizeof part_token, "%.*s", (int)len, f.p);
+            if(int len = is_part_line(f.p); len > 0) {
+                snprintf(part_token, sizeof part_token, "%.*s", static_cast<int>(len), f.p);
                 f.p += len;
-                while(*f.p && isspace(*f.p))
+                while(*f.p && isspace(static_cast<uint8_t>(*f.p)))
                     f.p++;
                 // printf("\tPART: [%s][%s]\n", part_token, f->p);
                 mml.parse_partline(part_token, f.line_number, f.p, cg);
@@ -100,7 +98,7 @@ int parse_line(file &f, mml_ctx& mml, codegen& cg)
                     return -1;
                 }
             } else {
-                printf("Unknown line format: [%s]\n", f.p);
+                printf("Unknown line format: [%s]\n", reinterpret_cast<const char *>(f.p));
             }
         }
     }

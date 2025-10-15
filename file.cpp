@@ -3,6 +3,7 @@
 #include <cstring>
 #include <cctype>
 #include <cstdio>
+#include <cstdint>
 
 int file::open(char* filename)
 {
@@ -55,7 +56,7 @@ int file::read_token(int (*token_type)(size_t, char*))
     size_t len = p - start;
     snprintf(last_token, sizeof last_token, "%.*s", static_cast<int>(len), start);
 
-    while(*p && isspace(*p))
+    while(*p && isspace(static_cast<uint8_t>(*p)))
         p++; // skip whitespace
 
     return 1; // token found
@@ -65,7 +66,7 @@ int is_meta_token(size_t pos, char* c)
 {
     if(pos == 0)
         return *c == '#';
-    return isalnum(*c);
+    return isalnum(static_cast<uint8_t>(*c));
 }
 
 int is_macro_name(size_t pos, char* c)
@@ -73,6 +74,6 @@ int is_macro_name(size_t pos, char* c)
     if(pos == 0)
         return *c == '!';
     if(pos == 1)
-        return *c == '!' || isalpha(*c);
-    return isalpha(*c);
+        return *c == '!' || isalpha(static_cast<uint8_t>(*c));
+    return isalpha(static_cast<uint8_t>(*c));
 }

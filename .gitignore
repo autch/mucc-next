@@ -44,3 +44,4 @@
 *.pmd
 
 build*/
+cmake-build*/
