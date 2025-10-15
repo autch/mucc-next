@@ -84,10 +84,14 @@ int mml_ctx::parse_partdef(char* part_name, int lineno, mml_part &mp, part_buffe
             {
                 // relative expression change, optional number 0-127
                 int expr = mp.def_exp;
-                if(isdigit(peek()))
+                if(isdigit(peek())) {
                     read_number(&expr, &rel);
+                    expr *= mp.exp_mul;
+                }
                 if(c == '(')
                     expr = -expr;
+                if (expr > 127) expr = 127;
+                if (expr < -128) expr = -128;
                 pb.write(CCD_EXR);
                 pb.write(expr);
                 break;
@@ -338,10 +342,18 @@ int mml_ctx::parse_partdef(char* part_name, int lineno, mml_part &mp, part_buffe
             case 'W':
             {
                 // default step of `(` / `)` command, followed by number
+                bool exp_mul = false;
+                if (peek() == '*') {
+                    getchar();
+                    exp_mul = true;
+                }
                 int step = 0;
                 read_number(&step, &rel);
                 if(step < 1) step = 1;
-                mp.def_exp = step;
+                if (!exp_mul)
+                    mp.def_exp = step;
+                else
+                    mp.exp_mul = step;
                 break;
             }
 
