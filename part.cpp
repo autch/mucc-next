@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "part.h"
+#include "codegen.h"
 
 char mml_ctx::getchar()
 {
@@ -289,18 +290,6 @@ int mml_ctx::parse_drumline(codegen& cg)
 
 int mml_ctx::end_mml(codegen& cg)
 {
-    for(int part = 0; part < MAXPART; part++) {
-        if(part_buffer& pb = cg.get_part(part); pb.pos > 0) {
-            if(pb.loop_pos > 0) {
-                pb.write(CCD_JMP);
-                pb.loop_addr_pos = pb.addr();           // needs relocation
-                pb.write16(static_cast<uint16_t>(pb.loop_pos));      // also needs relocation
-            } else {
-                pb.write(CCD_END);
-            }
-            pb.size = pb.pos;
-        }
-    }
     parse_drumline(cg);
     return 0;
 }
@@ -318,3 +307,4 @@ void mml_ctx::report_drummacro(FILE *fp)
         fprintf(fp, "DRUMMACRO defined: [%s] = (%2d)[%s]\n", key.c_str(), value.index, value.definition.c_str());
     }
 }
+

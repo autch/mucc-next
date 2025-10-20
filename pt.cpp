@@ -65,7 +65,7 @@ int parse_line(file &f, mml_ctx& mml, codegen& cg)
             while(*f.p && isspace(static_cast<uint8_t>(*f.p)))
                 f.p++;
             mml.parse_partline(part_token, f.line_number, f.p, cg);
-        break;
+            break;
         case '#':
             parse_meta(f, cg);
             break;
@@ -161,7 +161,7 @@ int main(int ac, char** av)
         part_buffer& pb = cg.get_part(part);
         if(unsigned ticks = mp.current_tick(); ticks > 0 || pb.size > 0) {
             printf("PART %c: total %4u, at loop %4u, %5llu bytes\n",
-                'A' + part, ticks, mp.tick_at_loop, pb.size);
+                'A' + part, ticks, mp.get_tick_at_loop(), pb.size);
         }
     }
     printf("Total %d bytes written.\n", bytes_written);

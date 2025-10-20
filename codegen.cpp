@@ -49,6 +49,8 @@ int codegen::write_pmd(FILE *out_fp)
     int actual_parts = count_actual_parts();
     int min_parts = std::max(actual_parts, 6);
 
+    end_parts();
+
     memset(part_offsets, 0, sizeof part_offsets);
 
     // write part definitions

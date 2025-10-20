@@ -25,7 +25,7 @@ int mml_ctx::parse_partdef(char* part_name, int lineno, mml_part &mp, part_buffe
                 int oct = 0;
                 read_number(&oct, &rel);
                 if(rel)
-                    mp.oct1 = oct;
+                    mp.oct1 = static_cast<int8_t>(oct);
                 else
                     mp.oct = oct;
                 break;
@@ -116,7 +116,7 @@ int mml_ctx::parse_partdef(char* part_name, int lineno, mml_part &mp, part_buffe
                 int vol = 0;
                 read_number(&vol, &rel);
                 if(rel)
-                    mp.vol1 = vol;
+                    mp.vol1 = static_cast<int8_t>(vol);
                 else
                     mp.vol = vol;
                 pb.write(CCD_VOL);
@@ -133,7 +133,7 @@ int mml_ctx::parse_partdef(char* part_name, int lineno, mml_part &mp, part_buffe
                     break;
                 }
                 if(rel)
-                    mp.len1 = length;
+                    mp.len1 = static_cast<int8_t>(length);
                 else
                     mp.len = length;
                 break;
@@ -176,10 +176,10 @@ int mml_ctx::parse_partdef(char* part_name, int lineno, mml_part &mp, part_buffe
                 if (peek() == 'D') {
                     getchar();
                     read_number(&det, &rel);
-                    mp.det1 += det;
+                    mp.det1 = static_cast<int8_t>(mp.det1 + det);
                 } else {
                     read_number(&det, &rel);
-                    mp.det = det;
+                    mp.det = static_cast<int8_t>(det);
                 }
                 pb.write2(CCD_DTN, mp.det + mp.det1);
                 break;
@@ -192,8 +192,8 @@ int mml_ctx::parse_partdef(char* part_name, int lineno, mml_part &mp, part_buffe
                 mp.nestdata[mp.nestlevel++] = pb.addr(); // current code address
                 pb.write(0); // placeholder for loop count
 
-                mp.tickstack[++mp.ticklevel] = 0;
-                mp.tickstack[++mp.ticklevel] = 0;
+                mp.push_tick_zero();
+                mp.push_tick_zero();
                 break;
             }
             case ']':
@@ -210,8 +210,8 @@ int mml_ctx::parse_partdef(char* part_name, int lineno, mml_part &mp, part_buffe
                 pb.write_at(mp.nestdata[--mp.nestlevel], times);
                 pb.write(CCD_NXT);
 
-                unsigned loop_ticks = mp.tickstack[mp.ticklevel--];
-                unsigned till_break = mp.tickstack[mp.ticklevel--];
+                unsigned loop_ticks = mp.pop_tick_get();
+                unsigned till_break = mp.pop_tick_get();
 
                 if(till_break > 0) {
                     mp.current_tick() += loop_ticks * (times - 1) + till_break;
@@ -238,10 +238,10 @@ int mml_ctx::parse_partdef(char* part_name, int lineno, mml_part &mp, part_buffe
                 if(peek() == '_') {
                     getchar();
                     read_number(&trs, &rel);
-                    mp.trs += trs;
+                    mp.trs = static_cast<int8_t>(mp.trs + trs);
                 } else {
                     read_number(&trs, &rel);
-                    mp.trs = trs;
+                    mp.trs = static_cast<int8_t>(trs);
                 }
                 pb.write2(CCD_TRS, mp.trs);
                 break;
@@ -254,7 +254,7 @@ int mml_ctx::parse_partdef(char* part_name, int lineno, mml_part &mp, part_buffe
             }
             case 'L':
                 // loop point set
-                mp.tick_at_loop = mp.current_tick();
+                mp.save_tick_at_loop();
                 pb.loop_pos = pb.addr();
                 break;
             case '=':
