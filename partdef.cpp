@@ -52,7 +52,6 @@ int mml_ctx::parse_partdef(char* part_name, int lineno, mml_part &mp, part_buffe
                 gen_note(mp, mp.xnote, pb);
                 break;
             }
-#if 0 /* stray numbers should not be allowed, while original mucc allowed them */
             case '0':
             case '1':
             case '2':
@@ -65,10 +64,8 @@ int mml_ctx::parse_partdef(char* part_name, int lineno, mml_part &mp, part_buffe
             case '9':
             case '.':
                 p--;
-                printf("note same as previous: [%s]\n", p);
                 gen_note(mp, mp.xnote, pb);
                 break;
-#endif
             case 'r':
                 // rest, optional length, optional dot
                 gen_note(mp, -1, pb);
