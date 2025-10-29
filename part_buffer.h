@@ -1,4 +1,3 @@
-// filepath: c:\Users\nishimura\src\mucc-next\part_buffer.h
 #ifndef PART_BUFFER_H
 #define PART_BUFFER_H
 
@@ -60,7 +59,7 @@ struct part_buffer
         write(cmd);
         write(param);
     }
-    void write_n(uint8_t cmd, int* ptr, int count)
+    void write_n(uint8_t cmd, const int* ptr, int count)
     {
         write(cmd);
         for(int i = 0; i < count; i++) {

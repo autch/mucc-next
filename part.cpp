@@ -11,20 +11,20 @@ char mml_ctx::getchar()
     while(true) {
         if(char c = *p++; c != '\0')
             return c;
-        if(macro_sp == 0)
+        if(macro_stack.empty())
             return 0;
         pop_macro();
     }
 }
 
-int mml_ctx::read_number(int* out, int* is_relative)
+int mml_ctx::read_number(int& out, int& is_relative)
 {
     int sign = 1;
-    *is_relative = 0;
+    is_relative = 0;
     if(peek() == '+' || peek() == '-') {
         if(peek() == '-')
             sign = -1;
-        *is_relative = 1;
+        is_relative = 1;
         getchar();
     }
     if(!isdigit(peek())) {
@@ -34,7 +34,7 @@ int mml_ctx::read_number(int* out, int* is_relative)
     while(isdigit(peek())) {
         value = value * 10 + (getchar() - '0');
     }
-    *out = value * sign;
+    out = value * sign;
     while(isspace(peek()))
         getchar(); // skip whitespace
     return 1;
@@ -44,7 +44,7 @@ int mml_ctx::read_numbers(int* out, int count)
 {
     int rel = 0, nums_read = 0;
     for(int i = 0; i < count; i++) {
-        if(!read_number(out + i, &rel)) {
+        if(!read_number(out[i], rel)) {
             return nums_read; // failed to read number
         }
         nums_read++;
@@ -71,7 +71,7 @@ int convert_length_to_clock(int len)
     return TIMEBASE / len; // 96 = 24 * 4
 }
 
-int mml_ctx::read_length(int* out, int* is_relative)
+int mml_ctx::read_length(int& out, int& is_relative)
 {
     if(peek() == '%') {
         // direct clock number
@@ -87,7 +87,7 @@ int mml_ctx::read_length(int* out, int* is_relative)
                 }
                 value = convert_length_to_clock(value);
             } else {
-                value = *out;
+                value = out;
             }
             if(peek() == '.') {
                 // dot length
@@ -104,8 +104,8 @@ int mml_ctx::read_length(int* out, int* is_relative)
             }
             break;
         }
-        *out = total;
-        *is_relative = 0;
+        out = total;
+        is_relative = 0;
         while(isspace(peek()))
             getchar(); // skip whitespace
         return 1;
@@ -115,7 +115,7 @@ int mml_ctx::read_length(int* out, int* is_relative)
 void mml_ctx::gen_note(mml_part &mp, int code, part_buffer &pb)
 {
     int len = mp.len + mp.len1, rel;
-    if(int ret = read_length(&len, &rel); ret == 0)
+    if(int ret = read_length(len, rel); ret == 0)
         len = mp.len + mp.len1;
 
     if(peek() == '&') {
@@ -175,7 +175,7 @@ int mml_ctx::call_macro(mml_part &mp, part_buffer &pb)
     }
     macro_name[i] = '\0';
     if(auto it = macro.find(std::string(macro_name)); it != macro.end()) {
-        if(macro_sp >= MACRONEST) {
+        if(macro_stack.size() >= MACRONEST) {
             printf("Macro stack overflow.\n");
             return -1;
         }
@@ -281,10 +281,7 @@ int mml_ctx::parse_drumline(codegen& cg)
         pb.length_written = dummy_part.current_tick();
 
     }
-    for (auto& pb : drum_buffers )
-    {
-        cg.add_drum_buffer(pb);
-    }
+    cg.set_drum_patterns(std::move(drum_buffers));
     return 0;
 }
 

@@ -6,12 +6,13 @@
 #include <string>
 #include <map>
 #include <array>
-#include <vector>
+#include <deque>
+#include <stack>
 
 #include "mucc_def.h"
 #include "part_buffer.h"
 
-class codegen; // forward declare to avoid including codegen.h in this header
+class codegen;
 
 struct mml_part
 {
@@ -36,50 +37,43 @@ struct mml_part
     uint8_t def_exp{1};  // default step of relative expression command `(/)`
     int exp_mul{1};      // rel. expressions with number, i.e. `(n` or `)n`, are multiplied by this value
 
-    std::array<int, MAXNEST> nestdata{};
-    int nestlevel{0};
-
-    auto& current_tick() { return tickstack.at(ticklevel); }
-    auto& ticks_till_break() { return tickstack.at(ticklevel - 1); }
-
-    // Safe operations for tick stack to avoid direct index arithmetic in callers.
-    void push_tick_zero()
+    void push_loop_addr(uint16_t addr) { nestdata.push(addr); }
+    uint16_t pop_loop_addr()
     {
-        ++ticklevel;
-        if (ticklevel >= static_cast<int>(tickstack.size())) {
-            tickstack.resize(static_cast<size_t>(ticklevel) + 1, 0u);
-        }
-        tickstack.at(ticklevel) = 0u;
+        uint16_t addr = nestdata.top();
+        nestdata.pop();
+        return addr;
     }
+    size_t loop_nest_level() const { return nestdata.size(); }
 
-    unsigned pop_tick_get()
+    using tickitem = std::pair<unsigned, unsigned>;
+    auto& current_tick() { return tickstack.top().first; }
+    auto& ticks_till_break() { return tickstack.top().second; }
+
+    void push_tick() { tickstack.push({0u, 0u}); }
+    tickitem pop_tick()
     {
-        unsigned v = tickstack.at(ticklevel);
-        --ticklevel;
+        tickitem v = tickstack.top();
+        tickstack.pop();
         return v;
     }
 
-    void save_tick_at_loop()
-    {
-        tick_at_loop = current_tick();
-    }
-
+    void save_tick_at_loop() { tick_at_loop = current_tick(); }
     [[nodiscard]]
-    unsigned get_tick_at_loop() const
-    {
-        return tick_at_loop;
+    unsigned get_tick_at_loop() const { return tick_at_loop; }
+
+    mml_part() {
+        push_tick();
     }
 private:
-    // Use a vector for tickstack to allow safe resizing and clearer semantics.
-    // Initialize with an explicit constructor so the vector has (MAXNEST*2) elements initialized to 0.
-    std::vector<unsigned> tickstack = std::vector<unsigned>(MAXNEST * 2, 0u);
-    int ticklevel{1};
+    std::stack<int> nestdata; // stack of loop start addresses
+    std::stack<tickitem> tickstack;
     unsigned tick_at_loop{0};
 };
 
 class mml_ctx
 {
-    mml_part parts[MAXPART]{}; // A-Z plus some extra
+    std::array<mml_part, MAXPART> parts{}; // A-Z plus some extra
 
     int tempo1 = 0, tempo{120}; // tempo: absolute, tempo1: relative
 
@@ -93,35 +87,35 @@ class mml_ctx
     int drummacro_count = 0;
     std::map<std::string, std::string> macro;   // key -> definition
 
-    char* macro_stack[MACRONEST]{nullptr};
-    int macro_sp{0};
+    std::stack<char*> macro_stack;
 
     char* p{nullptr}; // current position in buffer
     uint32_t partflags = 0;
 
     void push_macro()
     {
-        if(macro_sp >= MACRONEST) {
+        if(macro_stack.size() >= MACRONEST) {
             printf("Macro stack overflow.\n");
             return;
         }
-        macro_stack[macro_sp++] = p;
+        macro_stack.push(p);
     }
     void pop_macro()
     {
-        if(macro_sp <= 0) {
+        if(macro_stack.empty()) {
             printf("Macro stack underflow.\n");
             return;
         }
-        p = macro_stack[--macro_sp];
+        p = macro_stack.top();
+        macro_stack.pop();
     }
 
     void set_p(char* new_p) { p = new_p; }
     char getchar();
     [[nodiscard]] char peek() const { return *p; }
-    int read_number(int* out, int* is_relative);
+    int read_number(int& out, int& is_relative);
     int read_numbers(int* out, int count);
-    int read_length(int* out, int* is_relative);
+    int read_length(int& out, int& is_relative);
 
     int call_macro(mml_part &mp, part_buffer &pb);
     void gen_note(mml_part &mp, int code, part_buffer &pb);

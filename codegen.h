@@ -8,7 +8,7 @@
 
 #include "mucc_def.h"
 #include "part_buffer.h"
-
+#include <memory>
 
 class codegen
 {
@@ -36,7 +36,8 @@ class codegen
 public:
     void register_meta(const std::string& tag, const std::string& value);
     auto& get_part(int index) { return parts[index]; }
-	void add_drum_buffer(part_buffer& pb) { drum_patterns.push_back(pb); }
+	void set_drum_patterns(std::vector<part_buffer>&& v) { drum_patterns = std::move(v); }
+
 	int write_pmd(FILE* out_fp);
 
 	void report_meta(FILE* fp);
