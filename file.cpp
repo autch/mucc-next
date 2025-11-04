@@ -30,10 +30,12 @@ char* file::readline()
     if (fgets(buffer, sizeof buffer, fp) == nullptr)
         return nullptr;
 
-    if (char* nl = strchr(buffer, '\n')) *nl = '\0'; // remove newline
+    if (char* nl = strchr(buffer, '\n'))
+        *nl = '\0'; // remove newline
 
     if(buffer[0] != '#') {
-        if(char* sc = strchr(buffer, ';')) *sc = '\0'; // remove comment
+        if(char* sc = strchr(buffer, ';'))
+            *sc = '\0'; // remove comment
     }
     p = buffer;
     line_number++;
@@ -42,14 +44,14 @@ char* file::readline()
     return p;
 }
 
-int file::read_token(int (*token_type)(size_t, char*))
+int file::read_token(const std::function<int(size_t, char)>& predicate)
 {
     char* start = p;
 
     if(*p == '\0')
         return EOF; // end of line or empty
 
-    while (*p && token_type(p - start, p))
+    while (*p && predicate(p - start, *p))
         p++;
     if (start == p) return 0; // no token found
     
@@ -62,18 +64,18 @@ int file::read_token(int (*token_type)(size_t, char*))
     return 1; // token found
 }
 
-int is_meta_token(size_t pos, char* c)
+int is_meta_token(size_t pos, char c)
 {
     if(pos == 0)
-        return *c == '#';
-    return isalnum(static_cast<uint8_t>(*c));
+        return c == '#';
+    return isalnum(static_cast<uint8_t>(c));
 }
 
-int is_macro_name(size_t pos, char* c)
+int is_macro_name(size_t pos, char c)
 {
     if(pos == 0)
-        return *c == '!';
+        return c == '!';
     if(pos == 1)
-        return *c == '!' || isalpha(static_cast<uint8_t>(*c));
-    return isalpha(static_cast<uint8_t>(*c));
+        return c == '!' || isalpha(static_cast<uint8_t>(c));
+    return isalpha(static_cast<uint8_t>(c));
 }
