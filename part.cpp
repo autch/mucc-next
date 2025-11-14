@@ -8,8 +8,9 @@
 
 char mml_ctx::getchar()
 {
+    char c;
     while(true) {
-        if(char c = *p++; c != '\0')
+        if(pos < line.size() && (c = line[pos++]) != '\0')
             return c;
         if(macro_stack.empty())
             return 0;
@@ -180,7 +181,7 @@ int mml_ctx::call_macro(mml_part &mp, part_buffer &pb)
             return -1;
         }
         push_macro();
-        set_p(const_cast<char *>(it->second.c_str()));
+        set_p(const_cast<char *>(it->second.definition.c_str()), it->second.lineno);
     } else if(mp.tr_attr & 1) {
         if(auto dit = drummacro.find(std::string(macro_name)); dit != drummacro.end()) {
             gen_note(mp, dit->second.index, pb);
@@ -196,55 +197,54 @@ int mml_ctx::call_macro(mml_part &mp, part_buffer &pb)
 
 void mml_ctx::register_macro(int lineno, const std::string& name, const std::string& definition)
 {
-    if(name[1] == '!') {
-        // drum macro
-        if(drummacro_count >= MAXDRUMMACRO) {
-            printf("Too many drum macros (max %d).\n", MAXDRUMMACRO);
-            return;
-        }
-        if(auto [iter, success] = drummacro.insert_or_assign(
-            name.substr(2), drummacro_item{drummacro_count, lineno, definition});
-            !success) {
-            printf("Warning: drum macro redefined! [%s]\n", name.c_str());
-        }
-        drummacro_count++;
-    } else {
-        // normal macro
-        if(auto [iter, success] = macro.insert_or_assign(name.substr(1), definition);
-            !success) {
-            printf("Warning: macro redefined! [%s]\n", name.c_str());
-        }
+    if(auto [iter, success] = macro.insert_or_assign(name, macro_item{lineno, definition});
+        !success) {
+        printf("Warning: macro redefined! [%s] in line %d\n", name.c_str(), lineno);
     }
 }
 
-int mml_ctx::parse_partline(char* part_token, int lineno, char* line, codegen& cg)
+void mml_ctx::register_drummacro(int lineno, const std::string& name, const std::string& definition)
+{
+    if(drummacro_count >= MAXDRUMMACRO) {
+        printf("Too many drum macros (max %d).\n", MAXDRUMMACRO);
+        return;
+    }
+    if(auto [iter, success] = drummacro.insert_or_assign(
+        name, drummacro_item{drummacro_count, lineno, definition});
+        !success) {
+        printf("Warning: drum macro redefined! [%s] in line %d\n", name.c_str(), lineno);
+    }
+    drummacro_count++;
+}
+
+int mml_ctx::parse_partline(std::string_view part_token, int lineno, std::string_view line, codegen& cg)
 {
     char part_name[2];
 
-    for(char* pt = part_token; *pt != '\0'; pt++) {
-        if(strchr(part_token, *pt) != pt) {
-            printf("duplicate part definition: [%c][%s]\n", *pt, part_token);
+    for(char pt : part_token) {
+        if(0 && strchr(part_token.data(), pt) != &pt) {
+            printf("duplicate part definition: [%c][%s]\n", pt, part_token.data());
             return -1;
         }
-        char part = *pt;
+        char part = pt;
         partflags |= 1 << (part - 'A');
 
         part_name[0] = part;
         part_name[1] = '\0';
-        // printf("\tParsing for part [%c][%s]\n", part, line);
+        // printf("\tParsing for part [%c][%s]\n", part, line.data());
 
         // set part context to p
         mml_part& mp = parts[part - 'A'];
         part_buffer& pb = cg.get_part(part - 'A');
-        set_p(line);
+        set_p(line, lineno);
         
-        parse_partdef(part_name, lineno, mp, pb);
+        parse_partdef(part_name, mp, pb);
         pb.length_written = mp.current_tick();
     }
     return 0;
 }
 
-int mml_ctx::parse_wildcardline(int lineno, char* line, codegen& cg)
+int mml_ctx::parse_wildcardline(int lineno, std::string_view line, codegen& cg)
 {
     char part_name[32 + 1];
     uint32_t pf = partflags;
@@ -257,6 +257,7 @@ int mml_ctx::parse_wildcardline(int lineno, char* line, codegen& cg)
         pf >>= 1;
     }
     *pt = '\0';
+    // printf("\tWILDCARD: Parsing for part [%s][%s]\n", part_name, line.data());
     return parse_partline(part_name, lineno, line, cg);
 }
 
@@ -271,10 +272,10 @@ int mml_ctx::parse_drumline(codegen& cg)
         mml_part dummy_part; // dummy part context for drum pattern
         part_buffer& pb = drum_buffers[item.index];
 
-        set_p(const_cast<char *>(definition.c_str()));
+        set_p(const_cast<char *>(definition.c_str()), item.lineno);
 
         snprintf(drum_token, sizeof drum_token, "!!%s", name.c_str());
-        parse_partdef(drum_token, item.lineno, dummy_part, pb);
+        parse_partdef(drum_token, dummy_part, pb);
 
         pb.write(CCD_END);
         pb.size = pb.pos;
@@ -293,15 +294,16 @@ int mml_ctx::end_mml(codegen& cg)
 
 void mml_ctx::report_macro(FILE *fp)
 {
+    fprintf(fp, "MACRO definitions:\n");
     for(auto& [key, value]: macro) {
-        fprintf(fp, "MACRO defined: [%s] = [%s]\n", key.c_str(), value.c_str());
+        fprintf(fp, "\tline %4d: !%s = [%s]\n", value.lineno, key.c_str(), value.definition.c_str());
     }
 }
 
 void mml_ctx::report_drummacro(FILE *fp)
 {
+    fprintf(fp, "DRUMMACRO definitions:\n");
     for(auto& [key, value]: drummacro) {
-        fprintf(fp, "DRUMMACRO defined: [%s] = (%2d)[%s]\n", key.c_str(), value.index, value.definition.c_str());
+        fprintf(fp, "\tline %4d: !!%s = (%2d)[%s]\n", value.lineno, key.c_str(), value.index, value.definition.c_str());
     }
 }
-

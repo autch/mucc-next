@@ -50,7 +50,7 @@ struct mml_part
     auto& current_tick() { return tickstack.top().first; }
     auto& ticks_till_break() { return tickstack.top().second; }
 
-    void push_tick() { tickstack.push({0u, 0u}); }
+    void push_tick() { tickstack.emplace(0u, 0u); }
     tickitem pop_tick()
     {
         tickitem v = tickstack.top();
@@ -85,11 +85,23 @@ class mml_ctx
 
     std::map<std::string, drummacro_item> drummacro; // key -> (index, definition)
     int drummacro_count = 0;
-    std::map<std::string, std::string> macro;   // key -> definition
 
-    std::stack<char*> macro_stack;
+    struct macro_item {
+        int lineno;
+        std::string definition;
+    };
+    std::map<std::string, macro_item> macro;   // key -> (lineno, definition)
 
-    char* p{nullptr}; // current position in buffer
+    struct macro_stack_item {
+        int lineno;
+        std::string_view line;
+        int pos;
+    };
+    std::stack<macro_stack_item> macro_stack;
+
+    int lineno = 0;
+    std::string_view line;
+    int pos{0};
     uint32_t partflags = 0;
 
     void push_macro()
@@ -98,7 +110,7 @@ class mml_ctx
             printf("Macro stack overflow.\n");
             return;
         }
-        macro_stack.push(p);
+        macro_stack.push({lineno, line, pos});
     }
     void pop_macro()
     {
@@ -106,13 +118,25 @@ class mml_ctx
             printf("Macro stack underflow.\n");
             return;
         }
-        p = macro_stack.top();
+        auto [lineno, line, pos] = macro_stack.top();
+        this->lineno = lineno;
+        this->line = line;
+        this->pos = pos;
         macro_stack.pop();
     }
 
-    void set_p(char* new_p) { p = new_p; }
+    void set_p(std::string_view new_line, int lineno)
+    {
+        line = new_line;
+        pos = 0;
+        this->lineno = lineno;
+    }
     char getchar();
-    [[nodiscard]] char peek() const { return *p; }
+    [[nodiscard]] char peek() const
+    {
+        if(pos >= line.size()) return '\0';
+        return line[pos];
+    }
     int read_number(int& out, int& is_relative);
     int read_numbers(int* out, int count);
     int read_length(int& out, int& is_relative);
@@ -121,12 +145,13 @@ class mml_ctx
     void gen_note(mml_part &mp, int code, part_buffer &pb);
 
     int parse_drumline(codegen& cg);
-    int parse_partdef(char* part_name, int lineno, mml_part &mp, part_buffer &pb);
+    int parse_partdef(std::string_view part_name, mml_part &mp, part_buffer &pb);
 public:
     void register_macro(int lineno, const std::string& name, const std::string& definition);
+    void register_drummacro(int lineno, const std::string& name, const std::string& definition);
 
-    int parse_partline(char* part_token, int lineno, char* line, codegen& cg);
-    int parse_wildcardline(int lineno, char* line, codegen& cg);
+    int parse_partline(std::string_view part_token, int lineno, std::string_view line, codegen& cg);
+    int parse_wildcardline(int lineno, std::string_view line, codegen& cg);
     int end_mml(codegen& cg);
 
     auto& get_part(int part) { return parts[part]; }

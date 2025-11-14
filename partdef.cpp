@@ -1,6 +1,6 @@
 #include "part.h"
 
-int mml_ctx::parse_partdef(char* part_name, int lineno, mml_part &mp, part_buffer &pb)
+int mml_ctx::parse_partdef(const std::string_view part_name, mml_part &mp, part_buffer &pb)
 {
     while(true) {
         int c = static_cast<unsigned char>(getchar()), rel = 0;
@@ -39,7 +39,7 @@ int mml_ctx::parse_partdef(char* part_name, int lineno, mml_part &mp, part_buffe
             case 'g':
             {
                 // note, optional sharp/flat, optional length, optional dot, optional tie
-                static char tbl[] = {9, 11, 0, 2, 4, 5, 7};
+                static const char tbl[] = {9, 11, 0, 2, 4, 5, 7};
                 int note = tbl[c - 'a'] + (mp.oct + mp.oct1) * 12;
                 while(true) {
                     if ( peek() == '+' ) note++;
@@ -63,7 +63,7 @@ int mml_ctx::parse_partdef(char* part_name, int lineno, mml_part &mp, part_buffe
             case '8':
             case '9':
             case '.':
-                p--;
+                pos--;
                 gen_note(mp, mp.xnote, pb);
                 break;
             case 'r':
@@ -196,7 +196,7 @@ int mml_ctx::parse_partdef(char* part_name, int lineno, mml_part &mp, part_buffe
             {
                 // loop end, followed by an optional number of times to repeat (default infinite)
                 if(mp.loop_nest_level() == 0) {
-                    printf("Warning: ']' found without matching '['.\n");
+                    printf("Warning: ']' found without matching '[' in line %d\n", lineno);
                     break;
                 }
 
@@ -220,7 +220,7 @@ int mml_ctx::parse_partdef(char* part_name, int lineno, mml_part &mp, part_buffe
             case ':':
                 // loop exit, only valid inside loop, and its last iteration
                 if(mp.loop_nest_level() == 0) {
-                    printf("Warning: ':' found outside of loop.\n");
+                    printf("Warning: ':' found outside of loop in line %d\n", lineno);
                     break;
                 }
                 pb.write(CCD_BRK);
@@ -328,7 +328,7 @@ int mml_ctx::parse_partdef(char* part_name, int lineno, mml_part &mp, part_buffe
                 // report the current tick position for synchronization
                 printf(
                     "line %4d: PART %s TICK %5u  TR_ATTR %d OCT %d+%d LEN %d+%d VOL %d+%d DETUNE %d+%d XPOSE %d REP_NEST %zd\n",
-                    lineno, part_name, mp.current_tick(),
+                    lineno, part_name.data(), mp.current_tick(),
                     mp.tr_attr,
                     mp.oct, mp.oct1, mp.len, mp.len1, mp.vol, mp.vol1, mp.det, mp.det1,
                     mp.trs, mp.loop_nest_level());
@@ -353,13 +353,13 @@ int mml_ctx::parse_partdef(char* part_name, int lineno, mml_part &mp, part_buffe
             }
 
             default:
-                printf("Unknown command: [%c] in line %d [%s]\n", c, lineno, p);
+                printf("Unknown command: [%c] in line %d [%s]\n", c, lineno, line.substr(pos).data());
                 return -1;
         }
     }
     if(!macro_stack.empty()) {
         // still in macro
-        printf("Warning: still in macro after part line parsing.\n");
+        printf("[BUG] line %d: still in macro after part line parsing.\n", lineno);
     }
     return 0;
 }

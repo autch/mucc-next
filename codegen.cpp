@@ -37,7 +37,7 @@ uint16_t codegen::write_meta(FILE* fp, const std::string& tag)
 
 void codegen::register_meta(const std::string& tag, const std::string& value)
 {
-    if(auto [iter, success] = meta.insert_or_assign(tag.substr(1), value); !success) {
+    if(auto [iter, success] = meta.insert_or_assign(tag, value); !success) {
         printf("Warning: meta tag redefined! [%s]\n", tag.c_str());
     }
 }
@@ -116,7 +116,8 @@ int codegen::write_pmd(FILE *out_fp)
 
 void codegen::report_meta(FILE *fp)
 {
+    fprintf(fp, "META definitions:\n");
     for(auto& [key, value]: meta) {
-        fprintf(fp, "META defined: [%s] = [%s]\n", key.c_str(), value.c_str());
+        fprintf(fp, "\t#%s = [%s]\n", key.c_str(), value.c_str());
     }
 }
