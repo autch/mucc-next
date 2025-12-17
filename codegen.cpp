@@ -92,8 +92,12 @@ int codegen::write_pmd(FILE *out_fp)
 
     // write drum pattern offsets
     drum_offset = static_cast<uint16_t>(ftell(out_fp));
-    for(auto& i: drum_pattern_offsets) {
-        write16(out_fp, i);
+    if(drum_pattern_offsets.empty()) {
+        drum_offset = 0;
+    } else {
+        for(auto& i: drum_pattern_offsets) {
+            write16(out_fp, i);
+        }
     }
 
     // update header
