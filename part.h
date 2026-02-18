@@ -34,6 +34,7 @@ struct mml_part
     int8_t vol1{0};
     int8_t det1{0};
     int8_t trs{0};
+    int8_t exp{0};          // expression, reset to 0 at vol change
     uint8_t def_exp{1};  // default step of relative expression command `(/)`
     int exp_mul{1};      // rel. expressions with number, i.e. `(n` or `)n`, are multiplied by this value
 

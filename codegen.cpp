@@ -80,12 +80,15 @@ int codegen::write_pmd(FILE *out_fp)
         if(part_buffer& pb = parts[part]; pb.pos > 0 && pb.length_written > 0) {
             size_t fp = ftell(out_fp);
             if (fp > 0xffff) {
-                printf("Warning: part %c too large to fit in PMD file\n", 'A' + part);
+                printf("Warning: part %c is too large to fit in PMD file\n", 'A' + part);
             }
             part_offsets[part] = static_cast<uint16_t>(fp & 0xffff);
             pb.update_part_offset(part_offsets[part]);
             write_n(out_fp, pb.buffer.data(), pb.size);
         } else {
+            if(pb.pos > 0 && pb.length_written == 0) {
+                printf("Warning: part %c has some data but no ticks, skipping part (avoiding infinite loop in muslib)\n", 'A' + part);
+            }
             part_offsets[part] = 0;
         }
     }

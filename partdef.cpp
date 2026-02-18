@@ -91,6 +91,7 @@ int mml_ctx::parse_partdef(const std::string_view part_name, mml_part &mp, part_
                 if (expr < -128) expr = -128;
                 pb.write(CCD_EXR);
                 pb.write(expr);
+                mp.exp += expr;
                 break;
             }
             case 'v':
@@ -101,9 +102,11 @@ int mml_ctx::parse_partdef(const std::string_view part_name, mml_part &mp, part_
                 if(rel) {
                     pb.write(CCD_EXR);
                     pb.write(expr);
+                    mp.exp += expr;
                 } else {
                     pb.write(CCD_EXP);
                     pb.write(expr);
+                    mp.exp = expr;
                 }
                 break;
             }
@@ -118,6 +121,7 @@ int mml_ctx::parse_partdef(const std::string_view part_name, mml_part &mp, part_
                     mp.vol = vol;
                 pb.write(CCD_VOL);
                 pb.write(mp.vol + mp.vol1);
+                mp.exp = 0; // reset expression on volume change
                 break;
             }
             case 'l':
@@ -327,10 +331,10 @@ int mml_ctx::parse_partdef(const std::string_view part_name, mml_part &mp, part_
             {
                 // report the current tick position for synchronization
                 printf(
-                    "line %4d: PART %s TICK %5u  TR_ATTR %d OCT %d+%d LEN %d+%d VOL %d+%d DETUNE %d+%d XPOSE %d REP_NEST %zd\n",
+                    "line %4d: PART %s TICK %5u  TR_ATTR %d OCT %d+%d LEN %d+%d VOL %d+%d EXP %d DETUNE %d+%d XPOSE %d REP_NEST %zd\n",
                     lineno, part_name.data(), mp.current_tick(),
                     mp.tr_attr,
-                    mp.oct, mp.oct1, mp.len, mp.len1, mp.vol, mp.vol1, mp.det, mp.det1,
+                    mp.oct, mp.oct1, mp.len, mp.len1, mp.vol, mp.vol1, mp.exp, mp.det, mp.det1,
                     mp.trs, mp.loop_nest_level());
                 break;
             }
@@ -351,6 +355,9 @@ int mml_ctx::parse_partdef(const std::string_view part_name, mml_part &mp, part_
                     mp.exp_mul = step;
                 break;
             }
+            case '|':
+                // measure bar, ignored
+                break;
 
             default:
                 printf("Unknown command: [%c] in line %d [%s]\n", c, lineno, line.substr(pos).data());
