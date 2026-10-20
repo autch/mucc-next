@@ -15,8 +15,9 @@ struct part_buffer
     size_t size{0};    // actual size of data in buffer
     size_t pos{0};      // writing position, offset from buffer
 
-    size_t loop_pos{0}; // position of loop point `L`, offset from buffer. 0 means no loop point
-    size_t loop_addr_pos{0}; // position of jump instruction to loop_pos, usually at end of part, offset from buffer. 0 means no loop point
+    bool has_loop{false}; // loop point `L` is set
+    size_t loop_pos{0}; // position of loop point `L`, offset from buffer
+    size_t loop_addr_pos{0}; // position of jump instruction to loop_pos, usually at end of part, offset from buffer
 
     unsigned length_written{0};
 
@@ -69,7 +70,7 @@ struct part_buffer
 
     void update_part_offset(uint16_t offset)
     {
-        if(loop_pos == 0) return; // no loop point
+        if(!has_loop) return;
         uint16_t addr_pos = loop_addr_pos & 0xffff;
         uint16_t addr = (offset + loop_pos) & 0xffff;
         write_at(addr_pos, addr & 0xFF);
@@ -79,7 +80,7 @@ struct part_buffer
     void end_part()
     {
         if (pos == 0) return; // no data (empty part
-        if(loop_pos > 0) {
+        if(has_loop) {
             write(CCD_JMP);
             loop_addr_pos = addr();           // needs relocation
             write16(static_cast<uint16_t>(loop_pos));      // also needs relocation

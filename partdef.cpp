@@ -254,7 +254,11 @@ int mml_ctx::parse_partdef(const std::string_view part_name, mml_part &mp, part_
             case 'L':
                 // loop point set
                 mp.save_tick_at_loop();
+                pb.has_loop = true;
                 pb.loop_pos = pb.addr();
+                mp.loop_len_pending = true;
+                mp.xlen_at_loop = 0;
+                mp.leg_at_loop = mp.leg & 1;
                 break;
             case '=':
             {

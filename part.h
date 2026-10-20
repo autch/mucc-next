@@ -60,6 +60,11 @@ struct mml_part
         return v;
     }
 
+    // states assumed at the loop point `L`, to be restored before jumping back there
+    bool loop_len_pending{false};
+    int xlen_at_loop{0};    // 0: the code after `L` doesn't rely on the length
+    uint8_t leg_at_loop{0};
+
     void save_tick_at_loop() { tick_at_loop = current_tick(); }
     [[nodiscard]]
     unsigned get_tick_at_loop() const { return tick_at_loop; }

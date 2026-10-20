@@ -181,6 +181,11 @@ void mml_ctx::gen_note(mml_part &mp, int code, part_buffer &pb)
     }
 
     if ( !mp.porsw ) {
+        if(mp.loop_len_pending) {
+            // the first note after `L` omits its length: the player must have it at the jump
+            mp.loop_len_pending = false;
+            if(mp.xlen == len) mp.xlen_at_loop = len;
+        }
 		if ( mp.xlen != len ) {
 			mp.xlen = len;
             pb.write_length(len);
@@ -319,6 +324,18 @@ int mml_ctx::parse_drumline(codegen& cg)
 
 int mml_ctx::end_mml(codegen& cg)
 {
+    // the length and legato at the end of the part are in effect after jumping back to `L`,
+    // so restore what the code after `L` assumes
+    for(int part = 0; part < MAXPART; part++) {
+        mml_part& mp = parts[part];
+        part_buffer& pb = cg.get_part(part);
+        if(!pb.has_loop) continue;
+        if(mp.xlen_at_loop != 0 && mp.xlen != mp.xlen_at_loop)
+            pb.write_length(mp.xlen_at_loop);
+        if((mp.leg & 1) != mp.leg_at_loop)
+            pb.write(mp.leg_at_loop ? CCD_LEG : CCD_LOF);
+    }
+
     parse_drumline(cg);
     return 0;
 }
