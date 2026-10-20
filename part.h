@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "mucc_def.h"
+#include "error.h"
 #include "part_buffer.h"
 
 class codegen;
@@ -22,7 +23,7 @@ struct mml_part
     int xnote{0};       // may be out of 0..95, see mml_ctx::write_note()
 
     int8_t oct{0};      // may go below o0 by `<`
-    uint8_t len{TPQN};  // l4
+    int len{TPQN};      // l4
     uint8_t vol{0};
     int8_t det{0};
     uint8_t leg{0};
@@ -30,10 +31,12 @@ struct mml_part
     uint8_t porsw{0};
     int pornote1{0};
     int pornote2{0};
+    int porta_lineno{0};    // line of `{`
+    int porta_notes{0};     // notes between `{` and `}`
     bool explicit_not{false}; // `?` precedes the next note
     bool count_steps{false};  // drum pattern: count notes instead of ticks
     int8_t oct1{0};
-    int8_t len1{0};
+    int len1{0};
     int8_t vol1{0};
     int8_t det1{0};
     int8_t trs{0};
@@ -41,14 +44,20 @@ struct mml_part
     uint8_t def_exp{1};  // default step of relative expression command `(/)`
     int exp_mul{1};      // rel. expressions with number, i.e. `(n` or `)n`, are multiplied by this value
 
-    void push_loop_addr(uint16_t addr) { nestdata.push(addr); }
+    void push_loop_addr(uint16_t addr, int lineno)
+    {
+        nestdata.emplace(addr, lineno);
+        if(nestdata.size() > max_nest) max_nest = static_cast<unsigned>(nestdata.size());
+    }
     uint16_t pop_loop_addr()
     {
-        uint16_t addr = nestdata.top();
+        uint16_t addr = nestdata.top().first;
         nestdata.pop();
         return addr;
     }
     size_t loop_nest_level() const { return nestdata.size(); }
+    int open_loop_lineno() const { return nestdata.top().second; }  // line of the innermost `[`
+    unsigned max_nest{0};
 
     using tickitem = std::pair<unsigned, unsigned>;
     auto& current_tick() { return tickstack.top().first; }
@@ -76,7 +85,7 @@ struct mml_part
         push_tick();
     }
 private:
-    std::stack<int> nestdata; // stack of loop start addresses
+    std::stack<std::pair<uint16_t, int>> nestdata; // stack of loop start addresses and their lines
     std::stack<tickitem> tickstack;
     unsigned tick_at_loop{0};
 };
@@ -93,11 +102,12 @@ class mml_ctx
         std::string definition;
         bool compiled{false};
         unsigned steps{0};  // notes and rests in the pattern, each takes the length of the calling part
+        unsigned nest{0};   // deepest repeat in the pattern
         part_buffer pb;
     };
 
     std::map<std::string, int> drummacro;     // key -> index of drum_items
-    std::vector<drummacro_item> drum_items;   // a redefinition gets a new index, older calls keep the old one
+    std::vector<drummacro_item> drum_items;
 
     struct macro_item {
         int lineno;
@@ -117,20 +127,18 @@ class mml_ctx
     int pos{0};
     uint32_t partflags = 0;
 
+    [[noreturn]] void error(const char* fmt, ...);
+
     void push_macro()
     {
-        if(macro_stack.size() >= MACRONEST) {
-            printf("Macro stack overflow.\n");
-            return;
-        }
+        if(macro_stack.size() >= MACRONEST)
+            error("macro nested too deep (max %d)", MACRONEST);
         macro_stack.push({lineno, line, pos});
     }
     void pop_macro()
     {
-        if(macro_stack.empty()) {
-            printf("Macro stack underflow.\n");
-            return;
-        }
+        if(macro_stack.empty())
+            error("[BUG] macro stack underflow");
         auto [lineno, line, pos] = macro_stack.top();
         this->lineno = lineno;
         this->line = line;
@@ -151,25 +159,32 @@ class mml_ctx
         return line[pos];
     }
     int read_number(int& out, int& is_relative);
-    int read_numbers(int* out, int count);
+    int need_number(char cmd, int& out, int& is_relative);
+    void need_numbers(char cmd, int* out, int count);
     int read_length(int& out, int& is_relative);
+    int length_to_clock(int len);
+    void check_length(int len);
+    int check_param(char cmd, int value, int min, int max);
+    int check_s8(char cmd, int value) { return check_param(cmd, value, -128, 127); }
+    int check_u8(char cmd, int value) { return check_param(cmd, value, 0, 255); }
 
-    int call_macro(mml_part &mp, part_buffer &pb);
+    void call_macro(mml_part &mp, part_buffer &pb);
     void write_note(mml_part &mp, int code, part_buffer &pb);
     void gen_note(mml_part &mp, int code, part_buffer &pb, unsigned steps = 1);
 
     void compile_drummacro(int index);
-    int parse_drumline(codegen& cg);
-    int parse_partdef(std::string_view part_name, mml_part &mp, part_buffer &pb);
+    void check_part_end(std::string_view part_name, const mml_part& mp);
+    void parse_drumline(codegen& cg);
+    void parse_partdef(std::string_view part_name, mml_part &mp, part_buffer &pb);
 public:
     static constexpr int NOTE_REST = -1000;
 
     void register_macro(int lineno, const std::string& name, const std::string& definition);
-    int register_drummacro(int lineno, const std::string& name, const std::string& definition);
+    void register_drummacro(int lineno, const std::string& name, const std::string& definition);
 
-    int parse_partline(std::string_view part_token, int lineno, std::string_view line, codegen& cg);
-    int parse_wildcardline(int lineno, std::string_view line, codegen& cg);
-    int end_mml(codegen& cg);
+    void parse_partline(std::string_view part_token, int lineno, std::string_view line, codegen& cg);
+    void parse_wildcardline(int lineno, std::string_view line, codegen& cg);
+    void end_mml(codegen& cg);
 
     auto& get_part(int part) { return parts[part]; }
 

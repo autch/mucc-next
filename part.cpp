@@ -41,34 +41,51 @@ int mml_ctx::read_number(int& out, int& is_relative)
     return 1;
 }
 
-int mml_ctx::read_numbers(int* out, int count)
+void mml_ctx::error(const char* fmt, ...)
 {
-    int rel = 0, nums_read = 0;
-    for(int i = 0; i < count; i++) {
-        if(!read_number(out[i], rel)) {
-            return nums_read; // failed to read number
-        }
-        nums_read++;
-        if(peek() == ',' && i < count - 1)
-            getchar(); // skip comma
-        while(isspace(peek()))
-            getchar(); // skip whitespace
-    }
-    return nums_read;
+    va_list ap;
+    va_start(ap, fmt);
+    std::string msg = format_error(lineno, fmt, ap);
+    va_end(ap);
+    throw compile_error(msg);
 }
 
-int convert_length_to_clock(int len)
+int mml_ctx::need_number(char cmd, int& out, int& is_relative)
+{
+    if(!read_number(out, is_relative))
+        error("missing parameter of `%c`", cmd);
+    return 1;
+}
+
+// comma separated parameters, none of them can be omitted
+void mml_ctx::need_numbers(char cmd, int* out, int count)
+{
+    int rel = 0;
+    for(int i = 0; i < count; i++) {
+        if(!read_number(out[i], rel))
+            error("`%c` needs %d parameters", cmd, count);
+        if(i < count - 1) {
+            if(peek() != ',')
+                error("`%c` needs %d parameters", cmd, count);
+            getchar(); // skip comma
+            while(isspace(peek()))
+                getchar(); // skip whitespace
+        }
+    }
+}
+
+int mml_ctx::check_param(char cmd, int value, int min, int max)
+{
+    if(value < min || value > max)
+        error("parameter of `%c` out of range (%d, must be %d to %d)", cmd, value, min, max);
+    return value;
+}
+
+int mml_ctx::length_to_clock(int len)
 {
     // assuming 4/4 time signature and 24 clocks per quarter note
-    if(len <= 0) 
-    {
-        printf("warning: length too short (%d), setting to 1\n", len);
-        return 1;
-    }
-    if(len > TIMEBASE) {
-        printf("warning: length too long (%d), limiting to 96\n", len);
-        len = TIMEBASE;
-    }
+    if(len <= 0 || len > TIMEBASE)
+        error("length must be 1 to %d (%d), use `%%` for clocks", TIMEBASE, len);
     return TIMEBASE / len; // 96 = 24 * 4
 }
 
@@ -86,7 +103,7 @@ int mml_ctx::read_length(int& out, int& is_relative)
                 while(isdigit(peek())) {
                     value = value * 10 + (getchar() - '0');
                 }
-                value = convert_length_to_clock(value);
+                value = length_to_clock(value);
             } else {
                 value = out;
             }
@@ -128,11 +145,8 @@ void mml_ctx::write_note(mml_part &mp, int code, part_buffer &pb)
         pb.write(128 + code);
         return;
     }
-    if(code < -12 || code > 127) {
-        printf("Warning: note out of range (%d), replaced by rest in line %d\n", code, lineno);
-        pb.write(CCD_RRR);
-        return;
-    }
+    if(code < -12 || code > 127)
+        error("note out of range (%d, `?` reaches o-1c to o10g)", code);
     if(!explicit_not) {
         printf("Warning: note out of range (%d), written with `?` in line %d\n", code, lineno);
         if(code >= 96)
@@ -142,11 +156,23 @@ void mml_ctx::write_note(mml_part &mp, int code, part_buffer &pb)
     pb.write(code >= 0 ? 128 + code : code + 12);
 }
 
+// a length of 0 would be written as 0x00, which ends the part
+void mml_ctx::check_length(int len)
+{
+    if(len < 1)
+        error("length must be at least 1 clock (%d)", len);
+    if(len > MAXLENGTH)
+        error("length too long (%d, max %d), tie notes like `c1&1&1&1` instead", len, MAXLENGTH);
+}
+
 void mml_ctx::gen_note(mml_part &mp, int code, part_buffer &pb, unsigned steps)
 {
     int len = mp.len + mp.len1, rel;
     if(int ret = read_length(len, rel); ret == 0)
         len = mp.len + mp.len1;
+    // notes in a drum pattern have no length of their own
+    if(!mp.count_steps)
+        check_length(len);
 
     if(peek() == '&') {
         getchar();
@@ -154,6 +180,9 @@ void mml_ctx::gen_note(mml_part &mp, int code, part_buffer &pb, unsigned steps)
     }
 
     if(mp.porsw == 2) {
+        if(mp.porta_notes < 2 || mp.pornote2 == mp.pornote1)
+            error("portamento needs two different notes in `{}`");
+        check_s8('}', mp.pornote2 - mp.pornote1);
 		int x = static_cast<int>(log(fabs(mp.pornote2 - mp.pornote1) / len) / log(2.0));
 		x <<= 4;
 		x += 128;
@@ -196,10 +225,11 @@ void mml_ctx::gen_note(mml_part &mp, int code, part_buffer &pb, unsigned steps)
 	} else {
 		mp.pornote2 = mp.pornote1;
 		mp.pornote1 = code;
+        mp.porta_notes++;
 	}
 }
 
-int mml_ctx::call_macro(mml_part &mp, part_buffer &pb)
+void mml_ctx::call_macro(mml_part &mp, part_buffer &pb)
 {
     char c;
     char macro_name[MAXMACRONAME];
@@ -210,47 +240,39 @@ int mml_ctx::call_macro(mml_part &mp, part_buffer &pb)
     }
     macro_name[i] = '\0';
     if(auto it = macro.find(std::string(macro_name)); it != macro.end()) {
-        if(macro_stack.size() >= MACRONEST) {
-            printf("Macro stack overflow.\n");
-            return -1;
-        }
         push_macro();
         set_p(const_cast<char *>(it->second.definition.c_str()), it->second.lineno);
     } else if(mp.tr_attr & 1) {
-        if(auto dit = drummacro.find(std::string(macro_name)); dit != drummacro.end()) {
-            int index = dit->second;
-            compile_drummacro(index);
-            gen_note(mp, index, pb, drum_items[index].steps);
-            mp.xnote = index;
-        } else {
-            printf("Drum macro not found: [%s]\n", macro_name);
-        }
+        auto dit = drummacro.find(std::string(macro_name));
+        if(dit == drummacro.end())
+            error("macro or drum macro not found: !%s", macro_name);
+        int index = dit->second;
+        compile_drummacro(index);
+        // the call takes a level, and the pattern may have repeats in it
+        if(mp.loop_nest_level() + 1 + drum_items[index].nest > MAXNEST)
+            error("drum pattern !!%s nested too deep in repeats (max %d levels)", macro_name, MAXNEST);
+        gen_note(mp, index, pb, drum_items[index].steps);
+        mp.xnote = index;
     } else {
-        printf("Macro isn't found: [%s], note: cannot call drum macro in tracks other than =1'ed\n", macro_name);
+        error("macro not found: !%s (drum macros can be called only in parts with `=1`)", macro_name);
     }
-    return 0;
 }
 
 void mml_ctx::register_macro(int lineno, const std::string& name, const std::string& definition)
 {
-    if(auto [iter, success] = macro.insert_or_assign(name, macro_item{lineno, definition});
-        !success) {
-        printf("Warning: macro redefined! [%s] in line %d\n", name.c_str(), lineno);
-    }
+    if(macro.contains(name))
+        fatal(lineno, "macro redefined: !%s (defined in line %d)", name.c_str(), macro[name].lineno);
+    macro.emplace(name, macro_item{lineno, definition});
 }
 
-int mml_ctx::register_drummacro(int lineno, const std::string& name, const std::string& definition)
+void mml_ctx::register_drummacro(int lineno, const std::string& name, const std::string& definition)
 {
-    if(drum_items.size() >= MAXDRUMMACRO) {
-        printf("Error: too many drum macros (max %d) in line %d\n", MAXDRUMMACRO, lineno);
-        return -1;
-    }
-    if(auto [iter, success] = drummacro.insert_or_assign(name, static_cast<int>(drum_items.size()));
-        !success) {
-        printf("Warning: drum macro redefined! [%s] in line %d\n", name.c_str(), lineno);
-    }
-    drum_items.push_back({name, lineno, definition, false, 0, {}});
-    return 0;
+    if(auto it = drummacro.find(name); it != drummacro.end())
+        fatal(lineno, "drum macro redefined: !!%s (defined in line %d)", name.c_str(), drum_items[it->second].lineno);
+    if(drum_items.size() >= MAXDRUMMACRO)
+        fatal(lineno, "too many drum macros (max %d)", MAXDRUMMACRO);
+    drummacro.emplace(name, static_cast<int>(drum_items.size()));
+    drum_items.push_back({name, lineno, definition, false, 0, 0, {}});
 }
 
 // compiles a drum pattern on its first call, as the caller needs its steps to count ticks
@@ -272,11 +294,14 @@ void mml_ctx::compile_drummacro(int index)
     part_buffer& pb = item.pb;
 
     set_p(item.definition, item.lineno);
-    parse_partdef("!!" + item.name, dummy_part, pb);
+    std::string name = "!!" + item.name;
+    parse_partdef(name, dummy_part, pb);
+    check_part_end(name, dummy_part);
 
     pb.write(CCD_END);
     pb.size = pb.pos;
     item.steps = dummy_part.current_tick();
+    item.nest = dummy_part.max_nest;
 
     std::swap(macro_stack, saved_macro_stack);
     line = saved_line;
@@ -284,15 +309,21 @@ void mml_ctx::compile_drummacro(int index)
     lineno = saved_lineno;
 }
 
-int mml_ctx::parse_partline(std::string_view part_token, int lineno, std::string_view line, codegen& cg)
+void mml_ctx::check_part_end(std::string_view part_name, const mml_part& mp)
+{
+    if(mp.loop_nest_level() > 0)
+        fatal(mp.open_loop_lineno(), "`[` isn't closed in %s", part_name.data());
+    if(mp.porsw)
+        fatal(mp.porta_lineno, "`{` isn't closed in %s", part_name.data());
+    if(mp.explicit_not)
+        fatal(0, "`?` at the end of %s isn't followed by a note", part_name.data());
+}
+
+void mml_ctx::parse_partline(std::string_view part_token, int lineno, std::string_view line, codegen& cg)
 {
     char part_name[2];
 
     for(char pt : part_token) {
-        if(0 && strchr(part_token.data(), pt) != &pt) {
-            printf("duplicate part definition: [%c][%s]\n", pt, part_token.data());
-            return -1;
-        }
         char part = pt;
         partflags |= 1 << (part - 'A');
 
@@ -308,10 +339,9 @@ int mml_ctx::parse_partline(std::string_view part_token, int lineno, std::string
         parse_partdef(part_name, mp, pb);
         pb.length_written = mp.current_tick();
     }
-    return 0;
 }
 
-int mml_ctx::parse_wildcardline(int lineno, std::string_view line, codegen& cg)
+void mml_ctx::parse_wildcardline(int lineno, std::string_view line, codegen& cg)
 {
     char part_name[32 + 1];
     uint32_t pf = partflags;
@@ -325,10 +355,10 @@ int mml_ctx::parse_wildcardline(int lineno, std::string_view line, codegen& cg)
     }
     *pt = '\0';
     // printf("\tWILDCARD: Parsing for part [%s][%s]\n", part_name, line.data());
-    return parse_partline(part_name, lineno, line, cg);
+    parse_partline(part_name, lineno, line, cg);
 }
 
-int mml_ctx::parse_drumline(codegen& cg)
+void mml_ctx::parse_drumline(codegen& cg)
 {
     std::vector<part_buffer> drum_buffers;
 
@@ -338,16 +368,18 @@ int mml_ctx::parse_drumline(codegen& cg)
         drum_buffers.push_back(std::move(drum_items[index].pb));
     }
     cg.set_drum_patterns(std::move(drum_buffers));
-    return 0;
 }
 
-int mml_ctx::end_mml(codegen& cg)
+void mml_ctx::end_mml(codegen& cg)
 {
     // the length and legato at the end of the part are in effect after jumping back to `L`,
     // so restore what the code after `L` assumes
     for(int part = 0; part < MAXPART; part++) {
         mml_part& mp = parts[part];
         part_buffer& pb = cg.get_part(part);
+        std::string name = 'A' + part <= 'Z' ? std::string("part ") + static_cast<char>('A' + part)
+                                              : "part (" + std::to_string(part) + ")";
+        check_part_end(name, mp);
         if(!pb.has_loop) continue;
         if(mp.xlen_at_loop != 0 && mp.xlen != mp.xlen_at_loop)
             pb.write_length(mp.xlen_at_loop);
@@ -356,7 +388,6 @@ int mml_ctx::end_mml(codegen& cg)
     }
 
     parse_drumline(cg);
-    return 0;
 }
 
 void mml_ctx::report_macro(FILE *fp)

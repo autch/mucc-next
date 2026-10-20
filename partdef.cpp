@@ -1,6 +1,6 @@
 #include "part.h"
 
-int mml_ctx::parse_partdef(const std::string_view part_name, mml_part &mp, part_buffer &pb)
+void mml_ctx::parse_partdef(const std::string_view part_name, mml_part &mp, part_buffer &pb)
 {
     while(true) {
         int c = static_cast<unsigned char>(getchar()), rel = 0;
@@ -23,11 +23,11 @@ int mml_ctx::parse_partdef(const std::string_view part_name, mml_part &mp, part_
             {
                 // octave change, followed by octave number 0-9, if number has +/-, change relative to current octave
                 int oct = 0;
-                read_number(oct, rel);
+                need_number(c, oct, rel);
                 if(rel)
-                    mp.oct1 = static_cast<int8_t>(oct);
+                    mp.oct1 = static_cast<int8_t>(check_s8(c, oct));
                 else
-                    mp.oct = oct;
+                    mp.oct = static_cast<int8_t>(check_s8(c, oct));
                 break;
             }
             case 'a':
@@ -87,8 +87,7 @@ int mml_ctx::parse_partdef(const std::string_view part_name, mml_part &mp, part_
                 }
                 if(c == '(')
                     expr = -expr;
-                if (expr > 127) expr = 127;
-                if (expr < -128) expr = -128;
+                check_s8(c, expr);
                 pb.write(CCD_EXR);
                 pb.write(expr);
                 mp.exp += expr;
@@ -98,12 +97,14 @@ int mml_ctx::parse_partdef(const std::string_view part_name, mml_part &mp, part_
             {
                 // absolute expression change, followed by number 0-127; if that number has +/-, change relative to the current expression
                 int expr = 0;
-                read_number(expr, rel);
+                need_number(c, expr, rel);
                 if(rel) {
+                    check_s8(c, expr);
                     pb.write(CCD_EXR);
                     pb.write(expr);
                     mp.exp += expr;
                 } else {
+                    check_u8(c, expr);
                     pb.write(CCD_EXP);
                     pb.write(expr);
                     mp.exp = expr;
@@ -114,13 +115,13 @@ int mml_ctx::parse_partdef(const std::string_view part_name, mml_part &mp, part_
             {
                 // absolute volume change, followed by number 0-127; if that number has +/-, change relative to the current volume
                 int vol = 0;
-                read_number(vol, rel);
+                need_number(c, vol, rel);
                 if(rel)
-                    mp.vol1 = static_cast<int8_t>(vol);
+                    mp.vol1 = static_cast<int8_t>(check_s8(c, vol));
                 else
-                    mp.vol = vol;
+                    mp.vol = static_cast<uint8_t>(check_u8(c, vol));
                 pb.write(CCD_VOL);
-                pb.write(mp.vol + mp.vol1);
+                pb.write(check_u8(c, mp.vol + mp.vol1));
                 mp.exp = 0; // reset expression on volume change
                 break;
             }
@@ -128,11 +129,11 @@ int mml_ctx::parse_partdef(const std::string_view part_name, mml_part &mp, part_
             {
                 // default note length, length number or direct clock number by '%'
                 int length = 0;
+                if(!isdigit(peek()) && peek() != '%')
+                    error("missing parameter of `l`");
                 read_length(length, rel);
-                if(length == 0) {
-                    printf("Warning: parameter of l cannot be zero, line %d\n", lineno);
-                    break;
-                }
+                if(!rel)
+                    check_length(length);
                 if(rel)
                     mp.len1 = static_cast<int8_t>(length);
                 else
@@ -143,7 +144,9 @@ int mml_ctx::parse_partdef(const std::string_view part_name, mml_part &mp, part_
             case 'Q':
             {
                 int gate = 0;
-                read_number(gate, rel);
+                need_number(c, gate, rel);
+                // ranges from pmml.txt. mucc makes q25 and over the same as q24
+                check_param(c, gate, 0, c == 'q' ? 100 : 8);
                 if(c == 'q') {
                     gate = ((24 - gate) * 99) / 24;
                 } else {
@@ -160,13 +163,13 @@ int mml_ctx::parse_partdef(const std::string_view part_name, mml_part &mp, part_
             {
                 // tempo change, followed by number, if number has +/-, change relative to the current tempo
                 int t = 0;
-                read_number(t, rel);
+                need_number(c, t, rel);
                 if(rel) {
                     tempo1 = t;
                 } else {
                     tempo = t;
                 }
-                pb.write2(CCD_TMP, tempo + tempo1);
+                pb.write2(CCD_TMP, check_u8(c, tempo + tempo1));
 
                 break;
             }
@@ -176,21 +179,23 @@ int mml_ctx::parse_partdef(const std::string_view part_name, mml_part &mp, part_
                 int det = 0;
                 if (peek() == 'D') {
                     getchar();
-                    read_number(det, rel);
-                    mp.det1 = static_cast<int8_t>(mp.det1 + det);
+                    need_number(c, det, rel);
+                    mp.det1 = static_cast<int8_t>(check_s8(c, mp.det1 + det));
                 } else {
-                    read_number(det, rel);
-                    mp.det = static_cast<int8_t>(det);
+                    need_number(c, det, rel);
+                    mp.det = static_cast<int8_t>(check_s8(c, det));
                 }
-                pb.write2(CCD_DTN, mp.det + mp.det1);
+                pb.write2(CCD_DTN, check_s8(c, mp.det + mp.det1));
                 break;
             }
             case '[':
             {
                 // loop start
+                if(mp.loop_nest_level() >= MAXNEST)
+                    error("repeats nested too deep (max %d levels)", MAXNEST);
                 mp.xlen = 0;
                 pb.write(CCD_RPT);
-                mp.push_loop_addr(pb.addr()); // current code address
+                mp.push_loop_addr(pb.addr(), lineno); // current code address
                 pb.write(0); // placeholder for loop count
 
                 mp.push_tick();
@@ -199,13 +204,12 @@ int mml_ctx::parse_partdef(const std::string_view part_name, mml_part &mp, part_
             case ']':
             {
                 // loop end, followed by an optional number of times to repeat (default infinite)
-                if(mp.loop_nest_level() == 0) {
-                    printf("Warning: ']' found without matching '[' in line %d\n", lineno);
-                    break;
-                }
+                if(mp.loop_nest_level() == 0)
+                    error("`]` without `[`");
 
                 int times = 0;
                 read_number(times, rel);
+                check_u8(c, times);
 
                 pb.write_at(mp.pop_loop_addr(), times);
                 pb.write(CCD_NXT);
@@ -223,16 +227,13 @@ int mml_ctx::parse_partdef(const std::string_view part_name, mml_part &mp, part_
             }
             case ':':
                 // loop exit, only valid inside loop, and its last iteration
-                if(mp.loop_nest_level() == 0) {
-                    printf("Warning: ':' found outside of loop in line %d\n", lineno);
-                    break;
-                }
+                if(mp.loop_nest_level() == 0)
+                    error("`:` outside of repeat");
+                // muslib exits at the first `:` in the last iteration, the others are never taken
+                if(mp.ticks_till_break() != mml_part::NO_BREAK)
+                    error("second `:` in the same repeat");
                 pb.write(CCD_BRK);
-                // muslib exits at the first `:` in the last iteration
-                if(mp.ticks_till_break() == mml_part::NO_BREAK)
-                    mp.ticks_till_break() = mp.current_tick();
-                else
-                    printf("Warning: second ':' in the same loop is never taken, line %d\n", lineno);
+                mp.ticks_till_break() = mp.current_tick();
                 break;
             case '_':
             {
@@ -240,11 +241,11 @@ int mml_ctx::parse_partdef(const std::string_view part_name, mml_part &mp, part_
                 int trs = 0;
                 if(peek() == '_') {
                     getchar();
-                    read_number(trs, rel);
-                    mp.trs = static_cast<int8_t>(mp.trs + trs);
+                    need_number(c, trs, rel);
+                    mp.trs = static_cast<int8_t>(check_s8(c, mp.trs + trs));
                 } else {
-                    read_number(trs, rel);
-                    mp.trs = static_cast<int8_t>(trs);
+                    need_number(c, trs, rel);
+                    mp.trs = static_cast<int8_t>(check_s8(c, trs));
                 }
                 pb.write2(CCD_TRS, mp.trs);
                 break;
@@ -252,7 +253,7 @@ int mml_ctx::parse_partdef(const std::string_view part_name, mml_part &mp, part_
             case '!':
             {
                 // call macro, followed by macro name
-                if (call_macro(mp, pb) < 0) return -1;
+                call_macro(mp, pb);
                 break;
             }
             case 'L':
@@ -268,8 +269,8 @@ int mml_ctx::parse_partdef(const std::string_view part_name, mml_part &mp, part_
             {
                 // track attribute, followed by attribute value in number
                 int tr_attr = 0;
-                read_number(tr_attr, rel);
-                mp.tr_attr = tr_attr;
+                need_number(c, tr_attr, rel);
+                mp.tr_attr = static_cast<uint8_t>(check_u8(c, tr_attr));
                 pb.write2(CCD_TAT, mp.tr_attr);
                 break;
             }
@@ -277,15 +278,16 @@ int mml_ctx::parse_partdef(const std::string_view part_name, mml_part &mp, part_
             {
                 // change instrument, followed by instrument number 0-255
                 int inst = 0;
-                read_number(inst, rel);
-                pb.write2(CCD_INO, inst);
+                need_number(c, inst, rel);
+                pb.write2(CCD_INO, check_u8(c, inst));
                 break;
             }
             case 'E':
             {
                 // envelope, followed by envelope parameters, ar, dr, sl, sr
                 int env[4];
-                read_numbers(env, 4);
+                need_numbers(c, env, 4);
+                for(int v : env) check_u8(c, v);
                 pb.write_n(CCD_ENV, env, 4);
                 break;
             }
@@ -293,7 +295,8 @@ int mml_ctx::parse_partdef(const std::string_view part_name, mml_part &mp, part_
             {
                 // vibrato, followed by vibrato parameters, depth, speed, delay, rate
                 int vib[4];
-                read_numbers(vib, 4);
+                need_numbers(c, vib, 4);
+                for(int v : vib) check_u8(c, v);
                 pb.write_n(CCD_VIB, vib, 4);
                 break;
             }
@@ -301,7 +304,9 @@ int mml_ctx::parse_partdef(const std::string_view part_name, mml_part &mp, part_
             {
                 // portamento, followed by portamento parameters, note distance, speed
                 int por[2];
-                read_numbers(por, 2);
+                need_numbers(c, por, 2);
+                check_s8(c, por[0]);
+                check_u8(c, por[1]);
                 pb.write_n(CCD_PPA, por, 2);
                 break;
             }
@@ -311,11 +316,17 @@ int mml_ctx::parse_partdef(const std::string_view part_name, mml_part &mp, part_
                 break;
             case '{':
                 // begin portamento
+                if(mp.porsw)
+                    error("`{` inside `{}`");
                 mp.porsw = 1;
+                mp.porta_lineno = lineno;
+                mp.porta_notes = 0;
                 break;
             case '}':
             {
                 // end portamento, followed by optional length, optional dot, optional tie
+                if(mp.porsw != 1)
+                    error("`}` without `{`");
                 mp.porsw = 2;
                 gen_note(mp, mp.pornote1, pb);
                 pb.write(CCD_POF);
@@ -355,8 +366,8 @@ int mml_ctx::parse_partdef(const std::string_view part_name, mml_part &mp, part_
                     exp_mul = true;
                 }
                 int step = 0;
-                read_number(step, rel);
-                if(step < 1) step = 1;
+                need_number(c, step, rel);
+                check_param(c, step, 1, 127);
                 if (!exp_mul)
                     mp.def_exp = step;
                 else
@@ -368,13 +379,11 @@ int mml_ctx::parse_partdef(const std::string_view part_name, mml_part &mp, part_
                 break;
 
             default:
-                printf("Unknown command: [%c] in line %d [%s]\n", c, lineno, line.substr(pos).data());
-                return -1;
+                error("unknown command `%c` [%s]", c, std::string(line.substr(pos)).c_str());
         }
     }
     if(!macro_stack.empty()) {
         // still in macro
         printf("[BUG] line %d: still in macro after part line parsing.\n", lineno);
     }
-    return 0;
 }

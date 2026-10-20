@@ -1,4 +1,5 @@
 #include "codegen.h"
+#include "error.h"
 #include <cstdio>
 #include <cstring>
 
@@ -35,11 +36,10 @@ uint16_t codegen::write_meta(FILE* fp, const std::string& tag)
 }
 
 
-void codegen::register_meta(const std::string& tag, const std::string& value)
+void codegen::register_meta(int lineno, const std::string& tag, const std::string& value)
 {
-    if(auto [iter, success] = meta.insert_or_assign(tag, value); !success) {
-        printf("Warning: meta tag redefined! [%s]\n", tag.c_str());
-    }
+    if(auto [iter, success] = meta.emplace(tag, value); !success)
+        fatal(lineno, "meta tag redefined: #%s", tag.c_str());
 }
 
 int codegen::write_pmd(FILE *out_fp)
@@ -79,9 +79,6 @@ int codegen::write_pmd(FILE *out_fp)
     for(int part = 0; part < MAXPART; part++) {
         if(part_buffer& pb = parts[part]; pb.pos > 0 && pb.length_written > 0) {
             size_t fp = ftell(out_fp);
-            if (fp > 0xffff) {
-                printf("Warning: part %c is too large to fit in PMD file\n", 'A' + part);
-            }
             part_offsets[part] = static_cast<uint16_t>(fp & 0xffff);
             pb.update_part_offset(part_offsets[part]);
             write_n(out_fp, pb.buffer.data(), pb.size);
@@ -118,6 +115,9 @@ int codegen::write_pmd(FILE *out_fp)
     write16(out_fp, title2_offset); // title2 offset
 
     fseek(out_fp, 0, SEEK_END);
+    // muslib addresses the data in 16 bits
+    if(long size = ftell(out_fp); size > 0x10000)
+        fatal(0, "pmd too large (%ld bytes, max 65536)", size);
     return ftell(out_fp);
 }
 

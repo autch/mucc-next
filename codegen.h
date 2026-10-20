@@ -34,7 +34,7 @@ class codegen
 	}
 
 public:
-    void register_meta(const std::string& tag, const std::string& value);
+    void register_meta(int lineno, const std::string& tag, const std::string& value);
     auto& get_part(int index) { return parts[index]; }
 	void set_drum_patterns(std::vector<part_buffer>&& v) { drum_patterns = std::move(v); }
 

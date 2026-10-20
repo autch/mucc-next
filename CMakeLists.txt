@@ -15,6 +15,7 @@ codegen.h
 partdef.cpp
 mucc_def.h
 part_buffer.h
+error.h
 reserved.h
 )
 
