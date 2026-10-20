@@ -18,17 +18,18 @@ struct mml_part
 {
     int xlen{0};
     uint8_t tr_attr{0};
-    uint8_t xnote{0};
+    int xnote{0};       // may be out of 0..95, see mml_ctx::write_note()
 
-    uint8_t oct{0};
-    uint8_t len{0};
+    int8_t oct{0};      // may go below o0 by `<`
+    uint8_t len{TPQN};  // l4
     uint8_t vol{0};
     int8_t det{0};
     uint8_t leg{0};
     uint8_t xxleg{0};
     uint8_t porsw{0};
-    uint8_t pornote1{0};
-    uint8_t pornote2{0};
+    int pornote1{0};
+    int pornote2{0};
+    bool explicit_not{false}; // `?` precedes the next note
     int8_t oct1{0};
     int8_t len1{0};
     int8_t vol1{0};
@@ -143,13 +144,16 @@ class mml_ctx
     int read_length(int& out, int& is_relative);
 
     int call_macro(mml_part &mp, part_buffer &pb);
+    void write_note(mml_part &mp, int code, part_buffer &pb);
     void gen_note(mml_part &mp, int code, part_buffer &pb);
 
     int parse_drumline(codegen& cg);
     int parse_partdef(std::string_view part_name, mml_part &mp, part_buffer &pb);
 public:
+    static constexpr int NOTE_REST = -1000;
+
     void register_macro(int lineno, const std::string& name, const std::string& definition);
-    void register_drummacro(int lineno, const std::string& name, const std::string& definition);
+    int register_drummacro(int lineno, const std::string& name, const std::string& definition);
 
     int parse_partline(std::string_view part_token, int lineno, std::string_view line, codegen& cg);
     int parse_wildcardline(int lineno, std::string_view line, codegen& cg);

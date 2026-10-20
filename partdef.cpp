@@ -68,7 +68,7 @@ int mml_ctx::parse_partdef(const std::string_view part_name, mml_part &mp, part_
                 break;
             case 'r':
                 // rest, optional length, optional dot
-                gen_note(mp, -1, pb);
+                gen_note(mp, NOTE_REST, pb);
                 break;
             case 'x':
             {
@@ -298,8 +298,8 @@ int mml_ctx::parse_partdef(const std::string_view part_name, mml_part &mp, part_
                 break;
             }
             case '?':
-                // alternative note, immediately followed by a note
-                pb.write(CCD_NOT);
+                // alternative note, followed by a note. CCD_NOT is written just before the note byte
+                mp.explicit_not = true;
                 break;
             case '{':
                 // begin portamento

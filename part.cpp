@@ -113,6 +113,35 @@ int mml_ctx::read_length(int& out, int& is_relative)
     }
 }
 
+// note codes are o0c = 0. `0x80 + code` covers 0..95; `CCD_NOT` followed by
+// a byte reaches -12..127 (muslib reads 0x00-0x7F as code + 12, 0x80-0xFF as code + 128)
+void mml_ctx::write_note(mml_part &mp, int code, part_buffer &pb)
+{
+    bool explicit_not = mp.explicit_not;
+    mp.explicit_not = false;
+
+    if(code == NOTE_REST) {
+        pb.write(CCD_RRR);
+        return;
+    }
+    if(!explicit_not && code >= 0 && code < 96) {
+        pb.write(128 + code);
+        return;
+    }
+    if(code < -12 || code > 127) {
+        printf("Warning: note out of range (%d), replaced by rest in line %d\n", code, lineno);
+        pb.write(CCD_RRR);
+        return;
+    }
+    if(!explicit_not) {
+        printf("Warning: note out of range (%d), written with `?` in line %d\n", code, lineno);
+        if(code >= 96)
+            printf("\tnote: original muslib may play it an octave lower with @3-@5\n");
+    }
+    pb.write(CCD_NOT);
+    pb.write(code >= 0 ? 128 + code : code + 12);
+}
+
 void mml_ctx::gen_note(mml_part &mp, int code, part_buffer &pb)
 {
     int len = mp.len + mp.len1, rel;
@@ -158,7 +187,7 @@ void mml_ctx::gen_note(mml_part &mp, int code, part_buffer &pb)
 		}
         mp.current_tick() += len;
 
-        pb.write((code >= 0 && code < 96) ? 128 + code : CCD_RRR);
+        write_note(mp, code, pb);
 	} else {
 		mp.pornote2 = mp.pornote1;
 		mp.pornote1 = code;
@@ -203,11 +232,11 @@ void mml_ctx::register_macro(int lineno, const std::string& name, const std::str
     }
 }
 
-void mml_ctx::register_drummacro(int lineno, const std::string& name, const std::string& definition)
+int mml_ctx::register_drummacro(int lineno, const std::string& name, const std::string& definition)
 {
     if(drummacro_count >= MAXDRUMMACRO) {
-        printf("Too many drum macros (max %d).\n", MAXDRUMMACRO);
-        return;
+        printf("Error: too many drum macros (max %d) in line %d\n", MAXDRUMMACRO, lineno);
+        return -1;
     }
     if(auto [iter, success] = drummacro.insert_or_assign(
         name, drummacro_item{drummacro_count, lineno, definition});
@@ -215,6 +244,7 @@ void mml_ctx::register_drummacro(int lineno, const std::string& name, const std:
         printf("Warning: drum macro redefined! [%s] in line %d\n", name.c_str(), lineno);
     }
     drummacro_count++;
+    return 0;
 }
 
 int mml_ctx::parse_partline(std::string_view part_token, int lineno, std::string_view line, codegen& cg)
@@ -270,6 +300,7 @@ int mml_ctx::parse_drumline(codegen& cg)
     for(auto &[name, item] : drummacro) {
         const std::string& definition = item.definition;
         mml_part dummy_part; // dummy part context for drum pattern
+        dummy_part.len = 0;  // notes in a pattern take the length of the calling part, so never write lengths
         part_buffer& pb = drum_buffers[item.index];
 
         set_p(const_cast<char *>(definition.c_str()), item.lineno);

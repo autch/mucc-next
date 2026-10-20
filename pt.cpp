@@ -42,8 +42,7 @@ int parse_line(file &f, mml_ctx& mml, codegen& cg)
         cg.register_meta(std::string(match[1]), std::string(match[2]));
     } else if(std::regex_match(f.get_buffer(), match, re_macro_line)) {
         if(match[1] == "!!") {
-            mml.register_drummacro(f.get_line_number(), std::string(match[2]), std::string(match[3]));
-            return 0;
+            return mml.register_drummacro(f.get_line_number(), std::string(match[2]), std::string(match[3]));
         }
         mml.register_macro(f.get_line_number(), std::string(match[2]), std::string(match[3]));
     } else {
@@ -91,7 +90,8 @@ int main(int ac, char** av)
             if (f.get_p().empty())
                 continue;
             // printf("READ[%3d]: [%s]\n", f.line_number, f.p);
-            parse_line(f, mml, cg);
+            if (parse_line(f, mml, cg) < 0)
+                return EXIT_FAILURE;
         }
         f.close();
     }
