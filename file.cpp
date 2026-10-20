@@ -31,8 +31,9 @@ std::string_view file::readline()
     if (fgets(buf, sizeof buf, fp) == nullptr)
         return {};
 
-    if (char* nl = strchr(buf, '\n'))
-        *nl = '\0'; // remove newline
+    size_t len = strlen(buf);
+    while (len > 0 && (buf[len - 1] == '\n' || buf[len - 1] == '\r'))
+        buf[--len] = '\0';
 
     if(buf[0] != '#') {
         if(char* sc = strchr(buf, ';'))
