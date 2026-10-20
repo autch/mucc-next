@@ -142,7 +142,7 @@ void mml_ctx::write_note(mml_part &mp, int code, part_buffer &pb)
     pb.write(code >= 0 ? 128 + code : code + 12);
 }
 
-void mml_ctx::gen_note(mml_part &mp, int code, part_buffer &pb)
+void mml_ctx::gen_note(mml_part &mp, int code, part_buffer &pb, unsigned steps)
 {
     int len = mp.len + mp.len1, rel;
     if(int ret = read_length(len, rel); ret == 0)
@@ -190,7 +190,7 @@ void mml_ctx::gen_note(mml_part &mp, int code, part_buffer &pb)
 			mp.xlen = len;
             pb.write_length(len);
 		}
-        mp.current_tick() += len;
+        mp.current_tick() += mp.count_steps ? 1 : len * steps;
 
         write_note(mp, code, pb);
 	} else {
@@ -218,8 +218,10 @@ int mml_ctx::call_macro(mml_part &mp, part_buffer &pb)
         set_p(const_cast<char *>(it->second.definition.c_str()), it->second.lineno);
     } else if(mp.tr_attr & 1) {
         if(auto dit = drummacro.find(std::string(macro_name)); dit != drummacro.end()) {
-            gen_note(mp, dit->second.index, pb);
-            mp.xnote = dit->second.index;
+            int index = dit->second;
+            compile_drummacro(index);
+            gen_note(mp, index, pb, drum_items[index].steps);
+            mp.xnote = index;
         } else {
             printf("Drum macro not found: [%s]\n", macro_name);
         }
@@ -239,17 +241,47 @@ void mml_ctx::register_macro(int lineno, const std::string& name, const std::str
 
 int mml_ctx::register_drummacro(int lineno, const std::string& name, const std::string& definition)
 {
-    if(drummacro_count >= MAXDRUMMACRO) {
+    if(drum_items.size() >= MAXDRUMMACRO) {
         printf("Error: too many drum macros (max %d) in line %d\n", MAXDRUMMACRO, lineno);
         return -1;
     }
-    if(auto [iter, success] = drummacro.insert_or_assign(
-        name, drummacro_item{drummacro_count, lineno, definition});
+    if(auto [iter, success] = drummacro.insert_or_assign(name, static_cast<int>(drum_items.size()));
         !success) {
         printf("Warning: drum macro redefined! [%s] in line %d\n", name.c_str(), lineno);
     }
-    drummacro_count++;
+    drum_items.push_back({name, lineno, definition, false, 0, {}});
     return 0;
+}
+
+// compiles a drum pattern on its first call, as the caller needs its steps to count ticks
+void mml_ctx::compile_drummacro(int index)
+{
+    drummacro_item& item = drum_items[index];
+    if(item.compiled) return;
+    item.compiled = true;
+
+    // save the context of the calling line. the pattern must not return into the caller's macros
+    auto saved_line = line;
+    int saved_pos = pos, saved_lineno = lineno;
+    std::stack<macro_stack_item> saved_macro_stack;
+    std::swap(macro_stack, saved_macro_stack);
+
+    mml_part dummy_part; // dummy part context for drum pattern
+    dummy_part.len = 0;  // notes in a pattern take the length of the calling part, so never write lengths
+    dummy_part.count_steps = true;
+    part_buffer& pb = item.pb;
+
+    set_p(item.definition, item.lineno);
+    parse_partdef("!!" + item.name, dummy_part, pb);
+
+    pb.write(CCD_END);
+    pb.size = pb.pos;
+    item.steps = dummy_part.current_tick();
+
+    std::swap(macro_stack, saved_macro_stack);
+    line = saved_line;
+    pos = saved_pos;
+    lineno = saved_lineno;
 }
 
 int mml_ctx::parse_partline(std::string_view part_token, int lineno, std::string_view line, codegen& cg)
@@ -298,25 +330,12 @@ int mml_ctx::parse_wildcardline(int lineno, std::string_view line, codegen& cg)
 
 int mml_ctx::parse_drumline(codegen& cg)
 {
-    char drum_token[MAXMACRONAME];
     std::vector<part_buffer> drum_buffers;
-    drum_buffers.resize(drummacro_count);
 
-    for(auto &[name, item] : drummacro) {
-        const std::string& definition = item.definition;
-        mml_part dummy_part; // dummy part context for drum pattern
-        dummy_part.len = 0;  // notes in a pattern take the length of the calling part, so never write lengths
-        part_buffer& pb = drum_buffers[item.index];
-
-        set_p(const_cast<char *>(definition.c_str()), item.lineno);
-
-        snprintf(drum_token, sizeof drum_token, "!!%s", name.c_str());
-        parse_partdef(drum_token, dummy_part, pb);
-
-        pb.write(CCD_END);
-        pb.size = pb.pos;
-        pb.length_written = dummy_part.current_tick();
-
+    // patterns never called are compiled here
+    for(size_t index = 0; index < drum_items.size(); index++) {
+        compile_drummacro(static_cast<int>(index));
+        drum_buffers.push_back(std::move(drum_items[index].pb));
     }
     cg.set_drum_patterns(std::move(drum_buffers));
     return 0;
@@ -351,7 +370,9 @@ void mml_ctx::report_macro(FILE *fp)
 void mml_ctx::report_drummacro(FILE *fp)
 {
     fprintf(fp, "DRUMMACRO definitions:\n");
-    for(auto& [key, value]: drummacro) {
-        fprintf(fp, "\tline %4d: !!%s = (%2d)[%s]\n", value.lineno, key.c_str(), value.index, value.definition.c_str());
+    for(auto& [key, index]: drummacro) {
+        const drummacro_item& item = drum_items[index];
+        fprintf(fp, "\tline %4d: !!%s = (%2d, %u steps)[%s]\n",
+            item.lineno, key.c_str(), index, item.steps, item.definition.c_str());
     }
 }

@@ -8,6 +8,7 @@
 #include <array>
 #include <deque>
 #include <stack>
+#include <vector>
 
 #include "mucc_def.h"
 #include "part_buffer.h"
@@ -30,6 +31,7 @@ struct mml_part
     int pornote1{0};
     int pornote2{0};
     bool explicit_not{false}; // `?` precedes the next note
+    bool count_steps{false};  // drum pattern: count notes instead of ticks
     int8_t oct1{0};
     int8_t len1{0};
     int8_t vol1{0};
@@ -86,13 +88,16 @@ class mml_ctx
     int tempo1 = 0, tempo{120}; // tempo: absolute, tempo1: relative
 
     struct drummacro_item {
-        int index;
+        std::string name;
         int lineno;
         std::string definition;
+        bool compiled{false};
+        unsigned steps{0};  // notes and rests in the pattern, each takes the length of the calling part
+        part_buffer pb;
     };
 
-    std::map<std::string, drummacro_item> drummacro; // key -> (index, definition)
-    int drummacro_count = 0;
+    std::map<std::string, int> drummacro;     // key -> index of drum_items
+    std::vector<drummacro_item> drum_items;   // a redefinition gets a new index, older calls keep the old one
 
     struct macro_item {
         int lineno;
@@ -151,8 +156,9 @@ class mml_ctx
 
     int call_macro(mml_part &mp, part_buffer &pb);
     void write_note(mml_part &mp, int code, part_buffer &pb);
-    void gen_note(mml_part &mp, int code, part_buffer &pb);
+    void gen_note(mml_part &mp, int code, part_buffer &pb, unsigned steps = 1);
 
+    void compile_drummacro(int index);
     int parse_drumline(codegen& cg);
     int parse_partdef(std::string_view part_name, mml_part &mp, part_buffer &pb);
 public:
