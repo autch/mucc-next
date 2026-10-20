@@ -52,7 +52,8 @@ struct mml_part
     auto& current_tick() { return tickstack.top().first; }
     auto& ticks_till_break() { return tickstack.top().second; }
 
-    void push_tick() { tickstack.emplace(0u, 0u); }
+    static constexpr unsigned NO_BREAK = ~0u;
+    void push_tick() { tickstack.emplace(0u, NO_BREAK); }
     tickitem pop_tick()
     {
         tickitem v = tickstack.top();

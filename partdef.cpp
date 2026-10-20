@@ -212,7 +212,7 @@ int mml_ctx::parse_partdef(const std::string_view part_name, mml_part &mp, part_
 
                 auto [loop_ticks, till_break] = mp.pop_tick();
 
-                if(till_break > 0) {
+                if(till_break != mml_part::NO_BREAK) {
                     mp.current_tick() += loop_ticks * (times - 1) + till_break;
                 } else {
                     mp.current_tick() += loop_ticks * times;
@@ -228,7 +228,11 @@ int mml_ctx::parse_partdef(const std::string_view part_name, mml_part &mp, part_
                     break;
                 }
                 pb.write(CCD_BRK);
-                mp.ticks_till_break() = mp.current_tick();
+                // muslib exits at the first `:` in the last iteration
+                if(mp.ticks_till_break() == mml_part::NO_BREAK)
+                    mp.ticks_till_break() = mp.current_tick();
+                else
+                    printf("Warning: second ':' in the same loop is never taken, line %d\n", lineno);
                 break;
             case '_':
             {
